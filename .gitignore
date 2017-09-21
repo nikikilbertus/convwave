@@ -1,5 +1,9 @@
 # Created by https://www.gitignore.io/api/vim,latex,linux,macos,python,pycharm,virtualenv,sublimetext
 
+### Data Files ###
+*.hdf
+*.h5
+
 ### LaTeX ###
 ## Core latex/pdflatex auxiliary files:
 *.aux
