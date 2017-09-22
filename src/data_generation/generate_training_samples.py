@@ -89,7 +89,7 @@ def add_color(signal_t, psd, sampling_rate=4096):
 class Spectrogram:
 
     def __init__(self, sample_length, sampling_rate, n_injections,
-                 waveforms, psd, loudness=1.0):
+                 waveforms, psd, max_delta_t=0, loudness=1.0):
 
         self.sample_length = sample_length
         self.sampling_rate = sampling_rate
@@ -97,22 +97,34 @@ class Spectrogram:
         self.psd = psd
         self.waveforms = waveforms
         self.positions = None
+        self.max_delta_t = max_delta_t
         self.loudness = loudness
 
-        # Create the Gaussian noise
-        self.noise = self._make_noise()
+        # Create a random time difference between the signals
+        self.delta_t = 0.1  # np.random.uniform(-1*max_delta_t, max_delta_t)
+        self.offset = int(self.delta_t * self.sampling_rate)
 
-        # Create the signal by making some injections
-        self.signal, self.injections = self._make_signal()
+        # Create the Gaussian noises
+        self.noise_H1 = self._make_noise()
+        self.noise_L1 = self._make_noise()
+        self.noise = np.vstack((self.noise_H1, self.noise_L1))
 
-        # Calculate the strain as the sum of the noise and the signal
-        self.strain = self._make_strain()
+        # Create the signals by making some injections
+        self.signal_H1, self.signal_L1, self.injections = self._make_signals()
+        self.signal = np.vstack((self.signal_H1, self.signal_L1))
+
+        # Calculate the strains as the sum of the noises and the signals
+        self.strain_H1, self.strain_L1 = self._make_strains()
+        self.strain = np.vstack((self.strain_H1, self.strain_L1))
 
         # Calculate a spectrogram from the strain
-        self.spectrogram = self._make_spectrogram()
+        self.spectrogram_H1, self.spectrogram_L1 = self._make_spectrograms()
+        self.spectrogram = np.dstack(
+            (self.spectrogram_H1, self.spectrogram_L1))
 
         # Finally calculate the label for this spectrogram
-        self.label = self._make_label()
+        self.label_H1, self.label_L1 = self._make_labels()
+        self.label = np.vstack((self.label_H1, self.label_L1))
 
     # -------------------------------------------------------------------------
 
@@ -121,14 +133,16 @@ class Spectrogram:
 
     # -------------------------------------------------------------------------
 
-    def _make_signal(self):
+    def _make_signals(self):
 
-        # Initialize an empty signal
-        signal = np.zeros(self.sample_length * self.sampling_rate)
+        # Initialize empty signals
+        signal_H1 = np.zeros(self.sample_length * self.sampling_rate)
+        signal_L1 = np.zeros(self.sample_length * self.sampling_rate)
 
         # Get the starting positions for each injection
-        self.positions = np.linspace(0, 0.9*len(signal), self.n_injections + 1)
-        self.positions = np.array([int((x+y)/2) for x, y in
+        self.positions = np.linspace(0, 0.9 * len(signal_H1),
+                                     self.n_injections + 1)
+        self.positions = np.array([int((x + y) / 2) for x, y in
                                    zip(self.positions, self.positions[1:])])
 
         # Initialize an empty list for the injection meta-information
@@ -136,76 +150,102 @@ class Spectrogram:
 
         # Loop over all injections to be made
         for inj_number in range(self.n_injections):
-
             # Randomly select a waveform
             waveform_idx = np.random.randint(len(self.waveforms))
             waveform = self.waveforms[waveform_idx]
 
             # Add color to that waveform
-            color_waveform = add_color(waveform, self.psd)
+            color_waveform = add_color(waveform, self.psd)[100:-50]
 
             # Calculate absolute and relative starting positions and lengths
             # of the waveform that is being injected
-            abs_start_pos = self.positions[inj_number]
-            rel_start_pos = abs_start_pos / len(signal)
+            abs_start_pos_H1 = self.positions[inj_number]
+            rel_start_pos_H1 = abs_start_pos_H1 / len(signal_H1)
+            abs_start_pos_L1 = self.positions[inj_number] + self.offset
+            rel_start_pos_L1 = abs_start_pos_L1 / len(signal_H1)
+
             abs_waveform_length = len(color_waveform)
-            rel_waveform_length = (abs_waveform_length / len(signal))
+            rel_waveform_length = (abs_waveform_length / len(signal_H1))
 
             # Calculate the absolute end position of the injection
-            abs_end_pos = abs_start_pos + abs_waveform_length
+            abs_end_pos_H1 = abs_start_pos_H1 + abs_waveform_length
+            abs_end_pos_L1 = abs_start_pos_L1 + abs_waveform_length
 
             # Make the injection, i.e. add the waveform to the signal
-            signal[abs_start_pos:abs_end_pos] += (self.loudness *
-                                                  color_waveform)
+            signal_H1[abs_start_pos_H1:abs_end_pos_H1] += (self.loudness *
+                                                           color_waveform)
+            signal_L1[abs_start_pos_L1:abs_end_pos_L1] += (self.loudness *
+                                                           color_waveform)
 
             # Store information about the injection we just made
             injections.append(dict(waveform_idx=waveform_idx,
-                                   rel_start_pos=rel_start_pos,
+                                   rel_start_pos_H1=rel_start_pos_H1,
+                                   rel_start_pos_L1=rel_start_pos_L1,
                                    rel_waveform_length=rel_waveform_length))
 
-        return signal, injections
+        return signal_H1, signal_L1, injections
 
     # -------------------------------------------------------------------------
 
-    def _make_strain(self):
-        return self.noise + self.signal
+    def _make_strains(self):
+
+        strain_H1 = self.noise_H1 + self.signal_H1
+        strain_L1 = self.noise_L1 + self.signal_L1
+
+        return strain_H1, strain_L1
 
     # -------------------------------------------------------------------------
 
-    def _make_spectrogram(self, log_scale=True):
+    def _make_spectrograms(self, log_scale=True):
 
-        spectrogram = librosa.feature.melspectrogram(self.strain,
-                                                     sr=4096,
-                                                     n_fft=1024,
-                                                     hop_length=64,
-                                                     n_mels=64,
-                                                     fmin=0,
-                                                     fmax=400)
-        log_spectrogram = librosa.logamplitude(spectrogram, ref=1.0)
+        # Essentially curry the make_spectrogram() function of librosa, because
+        # we need to call it twice and this is just more readable
+        def make_spectrogram(strain):
+            return librosa.feature.melspectrogram(strain, sr=4096, n_fft=1024,
+                                                  hop_length=64, n_mels=64,
+                                                  fmin=0, fmax=400)
 
+        # Calculate the spectrograms
+        spectrogram_H1 = make_spectrogram(self.strain_H1)
+        spectrogram_L1 = make_spectrogram(self.strain_L1)
+
+        # If we are using log scale spectrograms, calculate them and return
         if log_scale:
-            return log_spectrogram
-        return spectrogram
+            log_spectrogram_H1 = librosa.logamplitude(spectrogram_H1, ref=1.0)
+            log_spectrogram_L1 = librosa.logamplitude(spectrogram_L1, ref=1.0)
+            return log_spectrogram_H1, log_spectrogram_L1
+        return spectrogram_H1, spectrogram_L1
 
     # -------------------------------------------------------------------------
 
-    def _make_label(self):
+    def _make_labels(self):
 
-        # Get the length of the spectrogram
-        spectrogram_length = self.spectrogram.shape[1]
+        # Get the lengths of the spectrograms
+        spectrogram_length_H1 = self.spectrogram_H1.shape[1]
+        spectrogram_length_L1 = self.spectrogram_L1.shape[1]
 
         # Initialize and empty label
-        label = np.zeros(spectrogram_length)
+        label_H1 = np.zeros(spectrogram_length_H1)
+        label_L1 = np.zeros(spectrogram_length_H1)
 
         # Loop over the injections we made and add set the label to 1 at
         # every point where there should be an injection present
         for injection in self.injections:
-            start = int(injection['rel_start_pos'] * spectrogram_length)
-            end = start + int(injection['rel_waveform_length'] *
-                              spectrogram_length)
-            label[start:end] += 1
+            # Calculate start and end positions
+            start_H1 = injection['rel_start_pos_H1'] * spectrogram_length_H1
+            start_L1 = injection['rel_start_pos_L1'] * spectrogram_length_H1
+            end_H1 = start_H1 + (injection['rel_waveform_length'] *
+                                 spectrogram_length_H1)
+            end_L1 = start_L1 + (injection['rel_waveform_length'] *
+                                 spectrogram_length_L1)
 
-        return label
+            # Actually set the labels
+            label_H1[int(start_H1):int(end_H1)] += 1
+            label_L1[int(start_L1):int(end_L1)] += 1
+
+            # If we want to include fuzzy labels, this would be the place!
+
+        return label_H1, label_L1
 
     # -------------------------------------------------------------------------
 
@@ -260,7 +300,7 @@ if __name__ == '__main__':
     # -------------------------------------------------------------------------
 
     print('Loading pre-computed waveforms...', end=' ')
-    with h5py.File(os.path.join(data_path, 'waveforms_near.h5')) as file:
+    with h5py.File(os.path.join(data_path, 'samples_dist_100_300.h5')) as file:
 
         # Read in waveforms as well as the indices of the unusable waveforms
         waveforms = np.array(file['waveforms'])
