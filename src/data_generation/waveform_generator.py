@@ -286,7 +286,7 @@ def generate_meta_config(output_file='../data/meta_config.json'):
         'inclination': 0.0,
         'delta_t': 1.0 / sample_rate,
         'f_lower': 15.0,
-        'approximant': 'TaylorT4',
+        'approximant': 'SEOBNRv4',
         'injection_time': 0.95
         # id does not have a default because it must be unique
     }
@@ -295,9 +295,9 @@ def generate_meta_config(output_file='../data/meta_config.json'):
     # For the chosen range consult
     # https://www.lsc-group.phys.uwm.edu/ligovirgo/cbcnote/O2/OfflineTuningVerificationInjections
     update_list = {
-        'masses': [1., 50.],
+        'masses': [2., 50.],
         # 'injection_time': [0.5, 0.9],
-        'distance': [150., 500.]
+        'distance': [1500., 2500.]
     }
 
     # Collect everything in a big meta config dictionary
