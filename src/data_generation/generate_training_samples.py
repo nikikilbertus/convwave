@@ -5,6 +5,8 @@
 import os
 import sys
 import time
+import argparse
+import pprint
 
 import numpy as np
 import h5py
@@ -86,6 +88,64 @@ def add_color(signal_t, psd, sampling_rate=4096):
 # CLASS DEFINITIONS
 # -----------------------------------------------------------------------------
 
+class CustomArgumentParser:
+
+    def __init__(self):
+
+        # Set up the parser
+        formatter_class = argparse.ArgumentDefaultsHelpFormatter
+        self.parser = argparse.ArgumentParser(formatter_class=formatter_class)
+
+        # Add command line options
+        self.parser.add_argument('--n-samples',
+                                 help='Number of samples to generate',
+                                 type=int,
+                                 default=64)
+        self.parser.add_argument('--sample-length',
+                                 help='Sample length in seconds',
+                                 type=int,
+                                 default=10)
+        self.parser.add_argument('--sampling-rate',
+                                 help='Sampling rate in Hz',
+                                 type=int,
+                                 default=4096)
+        self.parser.add_argument('--n-injections',
+                                 help='Number of injections per sample',
+                                 type=int,
+                                 default=4)
+        self.parser.add_argument('--loudness',
+                                 help='Scaling factor for injections',
+                                 type=float,
+                                 default=1.0)
+        self.parser.add_argument('--data-path',
+                                 help='Path of the data directory',
+                                 type=str,
+                                 default='../data/')
+        self.parser.add_argument('--real-strain-file',
+                                 help='Name of the file containing a sample '
+                                      'of the real strain / noise',
+                                 type=str,
+                                 default='H1_2017_4096.hdf5')
+        self.parser.add_argument('--waveforms-file',
+                                 help='Name of the file containing the '
+                                      'pre-computed waveforms',
+                                 type=str,
+                                 default='samples_dist_100_300.h5')
+        self.parser.add_argument('--output-file',
+                                 help='Name of the ouput HDF file',
+                                 type=str,
+                                 default='training_samples.h5')
+
+    # -------------------------------------------------------------------------
+
+    def parse_args(self):
+
+        # Parse arguments and return them as a dict instead of Namespace
+        return self.parser.parse_args().__dict__
+
+    # -------------------------------------------------------------------------
+
+
 class Spectrogram:
 
     def __init__(self, sample_length, sampling_rate, n_injections,
@@ -119,12 +179,12 @@ class Spectrogram:
 
         # Calculate a spectrogram from the strain
         self.spectrogram_H1, self.spectrogram_L1 = self._make_spectrograms()
-        self.spectrogram = np.dstack(
-            (self.spectrogram_H1, self.spectrogram_L1))
+        self.spectrogram = np.dstack((self.spectrogram_H1,
+                                      self.spectrogram_L1))
 
         # Finally calculate the label for this spectrogram
         self.label_H1, self.label_L1 = self._make_labels()
-        self.label = np.vstack((self.label_H1, self.label_L1))
+        self.label = np.logical_or(self.label_H1, self.label_L1).astype('int')
 
     # -------------------------------------------------------------------------
 
@@ -231,6 +291,7 @@ class Spectrogram:
         # Loop over the injections we made and add set the label to 1 at
         # every point where there should be an injection present
         for injection in self.injections:
+
             # Calculate start and end positions
             start_H1 = injection['rel_start_pos_H1'] * spectrogram_length_H1
             start_L1 = injection['rel_start_pos_L1'] * spectrogram_length_H1
@@ -245,7 +306,7 @@ class Spectrogram:
 
             # If we want to include fuzzy labels, this would be the place!
 
-        return label_H1, label_L1
+        return label_H1.astype('int'), label_L1.astype('int')
 
     # -------------------------------------------------------------------------
 
@@ -262,17 +323,24 @@ if __name__ == '__main__':
 
     # Start the stopwatch
     start_time = time.time()
-    print('Starting training sample generation...')
+    print('Starting sample generation using the following parameters:')
 
-    # Path to the directory where all data is stored
-    data_path = '../data/'
+    # Read in command line options
+    parser = CustomArgumentParser()
+    arguments = parser.parse_args()
+    pprint.pprint(arguments)
+
+    # Shortcuts for some global parameters / file paths
+    data_path = arguments['data_path']
+    real_strain_file = arguments['real_strain_file']
+    waveforms_file = arguments['waveforms_file']
 
     # -------------------------------------------------------------------------
     # Read in the real strain data from the LIGO website
     # -------------------------------------------------------------------------
 
     print('Reading in real strain data for PSD computation...', end=' ')
-    with h5py.File(os.path.join(data_path, 'H1_2017_4096.hdf5')) as file:
+    with h5py.File(os.path.join(data_path, real_strain_file)) as file:
         real_strain = np.array(file['strain/Strain'])
     print('Done!')
 
@@ -300,7 +368,7 @@ if __name__ == '__main__':
     # -------------------------------------------------------------------------
 
     print('Loading pre-computed waveforms...', end=' ')
-    with h5py.File(os.path.join(data_path, 'samples_dist_100_300.h5')) as file:
+    with h5py.File(os.path.join(data_path, waveforms_file)) as file:
 
         # Read in waveforms as well as the indices of the unusable waveforms
         waveforms = np.array(file['waveforms'])
@@ -315,30 +383,27 @@ if __name__ == '__main__':
     # Generate spectrograms
     # -------------------------------------------------------------------------
 
-    # Define some global functions
-    n_samples = 128
-    sample_length = 10
-    sampling_rate = 4096
-    n_injections = 4
-    loudness = 1
-
     # Store away the spectrograms and labels that we create
     spectograms, labels = [], []
 
     print('Generating training samples...')
 
-    for i in range(n_samples):
+    for i in range(arguments['n_samples']):
 
         # Create a spectrogram
-        spectogram = Spectrogram(sample_length, sampling_rate, n_injections,
-                                 waveforms, psd, loudness)
+        spectogram = Spectrogram(sample_length=arguments['sample_length'],
+                                 sampling_rate=arguments['sampling_rate'],
+                                 n_injections=arguments['n_injections'],
+                                 loudness=arguments['loudness'],
+                                 waveforms=waveforms,
+                                 psd=psd)
 
         # Store away the important information (spectrogram and label)
         spectograms.append(spectogram.spectrogram)
         labels.append(spectogram.label)
 
         # Make a sweet progress bar to see how things are going
-        progress_bar(current_value=i+1, max_value=n_samples,
+        progress_bar(current_value=i+1, max_value=arguments['n_samples'],
                      elapsed_time=time.time() - start_time)
 
     # -------------------------------------------------------------------------
@@ -347,7 +412,7 @@ if __name__ == '__main__':
 
     print('\nSaving results...', end=' ')
 
-    filename = os.path.join(data_path, 'training_samples.h5')
+    filename = os.path.join(data_path, arguments['output_file'])
     with h5py.File(filename, 'w') as file:
 
         file['spectrograms'] = np.array(spectograms)
