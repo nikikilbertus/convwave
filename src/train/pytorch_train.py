@@ -19,13 +19,14 @@ import torch.optim as optim
 
 from torch.autograd import Variable
 from torch.utils.data import TensorDataset, DataLoader
+from torch.optim import lr_scheduler
 
 
 # -----------------------------------------------------------------------------
 # FUNCTION DEFINITIONS
 # -----------------------------------------------------------------------------
 
-def create_weights(label, start_size=4, end_size=2):
+def create_weights(label, start_size=20, end_size=3):
     """
     Create the weights ('grayzones') for a given label.
 
@@ -110,7 +111,10 @@ def progress_bar(current_value, max_value, start_time, **kwargs):
     # Add all provided metrics, e.g. loss and Hamming distance
     metrics = []
     for metric, value in sorted(kwargs.items()):
-        metrics.append("{}: {:.3f}".format(metric, value))
+        if metric != 'lr':
+            metrics.append("{}: {:.3f}".format(metric, value))
+        else:
+            metrics.append("{}: {:.8f}".format(metric, value))
     out += ' - '.join(metrics) + ' '
 
     # Actually write the finished progress bar to the command line
@@ -203,14 +207,28 @@ class Net(nn.Module):
         super(Net, self).__init__()
 
         # Convolutional layers: (in_channels, out_channels, kernel_size)
-        self.conv1 = nn.Conv2d(2, 128, (3, 7), padding=(1, 3), stride=1)
-        self.conv2 = nn.Conv2d(128, 128, (3, 7), padding=(1, 3), stride=1)
-        self.conv3 = nn.Conv2d(128, 128, (3, 7), padding=(1, 3), stride=1)
-        self.conv4 = nn.Conv2d(128, 128, (3, 7), padding=(1, 3), stride=1)
-        self.conv5 = nn.Conv2d(128, 128, (3, 7), padding=(1, 3), stride=1)
-        self.conv6 = nn.Conv2d(128, 128, (3, 7), padding=(1, 3), stride=1)
-        self.conv7 = nn.Conv2d(128, 128, (3, 7), padding=(1, 3), stride=1)
-        self.conv8 = nn.Conv2d(128, 1, (1, 1), padding=0, stride=1)
+        self.conv1 = nn.Conv2d(in_channels=2, out_channels=128,
+                               kernel_size=(3, 7), padding=(1, 3), stride=1)
+        self.conv2 = nn.Conv2d(in_channels=128, out_channels=128,
+                               kernel_size=(3, 7), padding=(1, 6),
+                               stride=1, dilation=(1, 2))
+        self.conv3 = nn.Conv2d(in_channels=128, out_channels=128,
+                               kernel_size=(3, 7), padding=(1, 6),
+                               stride=1, dilation=(1, 2))
+        self.conv4 = nn.Conv2d(in_channels=128, out_channels=128,
+                               kernel_size=(3, 7), padding=(1, 6),
+                               stride=1, dilation=(1, 2))
+        self.conv5 = nn.Conv2d(in_channels=128, out_channels=128,
+                               kernel_size=(3, 7), padding=(1, 6),
+                               stride=1, dilation=(1, 2))
+        self.conv6 = nn.Conv2d(in_channels=128, out_channels=128,
+                               kernel_size=(3, 7), padding=(1, 6),
+                               stride=1, dilation=(1, 2))
+        self.conv7 = nn.Conv2d(in_channels=128, out_channels=128,
+                               kernel_size=(3, 7), padding=(1, 6),
+                               stride=1, dilation=(1, 2))
+        self.conv8 = nn.Conv2d(in_channels=128, out_channels=1,
+                               kernel_size=(1, 1), padding=(0, 0), stride=1)
 
         # Batch norm layers
         self.batchnorm1 = nn.BatchNorm2d(num_features=128)
@@ -222,9 +240,6 @@ class Net(nn.Module):
 
         # Pooling layers
         self.pool = nn.MaxPool2d(kernel_size=(2, 1), stride=(2, 1))
-
-        # Padding layers:
-        self.pad = nn.ReflectionPad2d((3, 3, 1, 1))
 
     # -------------------------------------------------------------------------
     # Define a forward pass through the network (apply the layers)
@@ -249,7 +264,6 @@ class Net(nn.Module):
             x = batchnorm(x)
             x = func.elu(x)
             x = self.pool(x)
-            x = func.dropout(x, p=0.3)
 
         # Layer 8
         # ---------------------------------------------------------------------
@@ -315,12 +329,17 @@ if __name__ == "__main__":
     net.float().cuda()
     net = torch.nn.DataParallel(net)
 
-    # If desired, load weights from pretrained model
-    # net.load_state_dict(torch.load('pytorch_model_weights_100_300_4k.net'))
+    # If desired, load weights from pre-trained model
+    # net.load_state_dict(torch.load('pytorch_model_weights_0400_0800_4k.net'))
 
     # Set up the optimizer and the initial learning rate, and zero parameters
     optimizer = optim.Adam(net.parameters(), lr=0.0001)
     optimizer.zero_grad()
+
+    # Set up the learning schedule to reduce the LR on plateaus
+    scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
+                                               factor=0.5, patience=5,
+                                               threshold=0.01, )
 
     # Set the mini-batch size, and calculate the number of mini-batches
     batch_size = 16
@@ -386,8 +405,10 @@ if __name__ == "__main__":
             optimizer.step()
 
             # Calculate the hamming distance between prediction and truth
-            running_hamm += hamming_dist(outputs.data.cpu().numpy(),
-                                         labels.data.cpu().numpy())
+            weighted_pred = (weights.float() * outputs.data.cpu()).numpy()
+            weighted_true = (weights.float() * labels.data.cpu()).numpy()
+            running_hamm += hamming_dist(np.round(weighted_pred),
+                                         weighted_true)
 
             # Make output to the command line
             progress_bar(current_value=mb_idx+1,
@@ -431,13 +452,19 @@ if __name__ == "__main__":
             val_loss += float(loss.data.cpu().numpy())
 
             # Calculate the hamming distance between prediction and truth
-            val_hamm += hamming_dist(outputs.data.cpu().numpy(),
-                                     labels.data.cpu().numpy())
+            weighted_pred = (weights.float() * outputs.data.cpu()).numpy()
+            weighted_true = (weights.float() * labels.data.cpu()).numpy()
+            val_hamm += hamming_dist(np.round(weighted_pred), weighted_true)
 
         #
         # ---------------------------------------------------------------------
         # PRINT FINAL PROGRESS AND LOG STUFF FOR TENSORBOARD VISUALIZATION
         # ---------------------------------------------------------------------
+
+        # Get the current learning rate... TODO: is this really the only way?!
+        lr = None
+        for param_group in optimizer.param_groups:
+            lr = param_group['lr']
 
         # Plot the final progress bar for this epoch
         progress_bar(current_value=n_minibatches_train,
@@ -446,7 +473,8 @@ if __name__ == "__main__":
                      loss=running_loss/n_minibatches_train,
                      hamming_dist=running_hamm/n_minibatches_train,
                      val_loss=val_loss/n_minibatches_validation,
-                     val_hamming_dist=val_hamm/n_minibatches_validation)
+                     val_hamming_dist=val_hamm/n_minibatches_validation,
+                     lr=lr)
         print()
 
         # Save everything to the TensorBoard logger
@@ -457,6 +485,10 @@ if __name__ == "__main__":
         log('hamming_dist', running_hamm/n_minibatches_train)
         log('val_loss', val_loss/n_minibatches_validation)
         log('val_hamming_dist', val_hamm/n_minibatches_validation)
+        log('learning_rate', lr)
+
+        # Reduce the learning rate if appropriate
+        scheduler.step(val_loss/n_minibatches_validation)
 
     # -------------------------------------------------------------------------
 
