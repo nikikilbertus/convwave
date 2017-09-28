@@ -340,7 +340,8 @@ if __name__ == '__main__':
     # -------------------------------------------------------------------------
 
     print('Reading in real strain data for PSD computation...', end=' ')
-    with h5py.File(os.path.join(data_path, real_strain_file)) as file:
+    strain_path = os.path.join(data_path, 'strain', real_strain_file)
+    with h5py.File(strain_path) as file:
         real_strain = np.array(file['strain/Strain'])
     print('Done!')
 
@@ -368,7 +369,8 @@ if __name__ == '__main__':
     # -------------------------------------------------------------------------
 
     print('Loading pre-computed waveforms...', end=' ')
-    with h5py.File(os.path.join(data_path, waveforms_file)) as file:
+    waveforms_path = os.path.join(data_path, 'waveforms', waveforms_file)
+    with h5py.File(waveforms_path) as file:
 
         # Read in waveforms as well as the indices of the unusable waveforms
         waveforms = np.array(file['waveforms'])
@@ -412,12 +414,13 @@ if __name__ == '__main__':
 
     print('\nSaving results...', end=' ')
 
-    filename = os.path.join(data_path, arguments['output_file'])
-    with h5py.File(filename, 'w') as file:
+    training_path = os.path.join(data_path, 'training',
+                                 arguments['output_file'])
+    with h5py.File(training_path, 'w') as file:
 
         file['spectrograms'] = np.array(spectograms)
         file['labels'] = np.array(labels)
 
     print('Done!')
-    file_size = os.path.getsize(filename) / 1e6
+    file_size = os.path.getsize(training_path) / 1e6
     print('Full sample size: {:.1f} MB'.format(file_size))
