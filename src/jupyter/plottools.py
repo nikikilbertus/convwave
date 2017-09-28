@@ -25,7 +25,22 @@ def force_aspect(ax, aspect=1.0):
 # -----------------------------------------------------------------------------
 
 
-def make_plot(image, true_label, pred_label, grayzones, vmin=None, vmax=None):
+def plot_spectrogram_label(spectrogram, true_label, pred_label,
+                           grayzones=None, vmin=None, vmax=None):
+    """
+    Take a spectrogram, the true label, and the predicted label, and combine
+    them into a plot for manual inspection. If grayzones are provided, then
+    these will be included in the plot.
+
+    Args:
+        spectrogram: 2D numpy array containing the spectrogram
+        true_label: 1D numpy array containing the true labels for injections
+        pred_label: 1D numpy array containing the predicted labels
+        grayzones: 1D numpy array containing the parts that are ignored by
+            the loss function during training
+        vmin: Minimum value of the spectrogram
+        vmax: Maximum valie of the spectrogram
+    """
 
     # Fix the size of figure as a whole
     plt.gcf().set_size_inches(18, 6, forward=True)
@@ -36,8 +51,8 @@ def make_plot(image, true_label, pred_label, grayzones, vmin=None, vmax=None):
     ax2 = plt.subplot(gs[1], sharex=ax1)
 
     # Plot the spectrogram
-    ax1.imshow(image, origin="lower", cmap="Greys_r", interpolation="none",
-               vmin=vmin, vmax=vmax)
+    ax1.imshow(spectrogram, origin="lower", cmap="Greys_r",
+               interpolation="none", vmin=vmin, vmax=vmax)
     ax1.set_xticklabels([])
     ax1.set_yticklabels([])
     ax1.xaxis.set_ticks_position('none')
@@ -70,3 +85,39 @@ def make_plot(image, true_label, pred_label, grayzones, vmin=None, vmax=None):
     plt.tight_layout()
     plt.gcf().subplots_adjust(hspace=0.05)
     plt.show()
+
+
+# -----------------------------------------------------------------------------
+
+
+def create_weights(label, start_size=4, end_size=2):
+    """
+    Create the weights ('grayzones') for a given label.
+
+    Args:
+        label: A vector labeling the pixels that contain an injection
+        start_size: Number of pixels to ignore at the start of an injection
+        end_size: Number of pixels to ignore at the end of an injections
+
+    Returns: A vector that is 0 for the pixels that should be ignored and 1
+        for all other pixels.
+    """
+
+    a = np.logical_xor(label, np.roll(label, 1))
+    b = np.cumsum(a) % 2
+
+    if start_size == 0:
+        c = np.zeros(label.shape)
+    else:
+        c = np.convolve(a * b, np.hstack((np.zeros(start_size - 1),
+                                          np.ones(start_size))),
+                        mode="same")
+
+    if end_size == 0:
+        d = np.zeros(label.shape)
+    else:
+        d = np.convolve(a * np.logical_not(b),
+                        np.hstack((np.ones(end_size), np.zeros(end_size - 1))),
+                        mode="same")
+
+    return np.logical_not(np.logical_or(c, d)).astype('int')
