@@ -502,8 +502,8 @@ if __name__ == "__main__":
 
     # Set up the name and directory of the file where the predictions will
     # be saved.
-    test_predictions_file = 'test_predictions_{}_{}.h5'.format(distances,
-                                                               sample_size)
+    test_predictions_file = 'predictions_{}_{}.h5'.format(distances,
+                                                          sample_size)
     test_predictions_path = os.path.join(data_path, 'predictions',
                                          test_predictions_file)
 
