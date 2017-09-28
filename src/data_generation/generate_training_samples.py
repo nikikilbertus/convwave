@@ -161,7 +161,7 @@ class Spectrogram:
         self.loudness = loudness
 
         # Create a random time difference between the signals
-        self.delta_t = 0.1  # np.random.uniform(-1*max_delta_t, max_delta_t)
+        self.delta_t = np.random.uniform(-1*max_delta_t, max_delta_t)
         self.offset = int(self.delta_t * self.sampling_rate)
 
         # Create the Gaussian noises
