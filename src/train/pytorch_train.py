@@ -330,7 +330,9 @@ if __name__ == "__main__":
     net = torch.nn.DataParallel(net)
 
     # If desired, load weights from pre-trained model
-    # net.load_state_dict(torch.load('pytorch_model_weights_0400_0800_4k.net'))
+    # TODO: Make this accessible through command line options!
+    # weights_file = './weights/pytorch_model_weights_0100_0300_4k.net'
+    # net.load_state_dict(torch.load(weights_file))
 
     # Set up the optimizer and the initial learning rate, and zero parameters
     optimizer = optim.Adam(net.parameters(), lr=0.0001)
@@ -497,8 +499,8 @@ if __name__ == "__main__":
 
     # Save the trained model
     print('Saving model...', end=' ')
-    weights_file = 'pytorch_model_weights_{}_{}.net'.format(distances,
-                                                            sample_size)
+    weights_file = ('./weights/pytorch_model_weights_{}_{}.net'.
+                    format(distances, sample_size))
     torch.save(net.state_dict(), weights_file)
     print('Done!')
 

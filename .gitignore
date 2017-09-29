@@ -8,6 +8,10 @@
 ### PyCharm Folders ###
 .idea
 
+### Weights and Logs folders ###
+src/train/logs/*/
+src/train/weights/*.net
+
 ### LaTeX ###
 ## Core latex/pdflatex auxiliary files:
 *.aux
