@@ -17,11 +17,15 @@ from matplotlib import mlab
 from scipy.interpolate import interp1d
 from librosa.feature import melspectrogram
 from librosa import logamplitude
+from scipy.signal import butter, filtfilt
+
+from IPython import embed
 
 
 # -----------------------------------------------------------------------------
 # FUNCTION DEFINITIONS
 # -----------------------------------------------------------------------------
+
 
 def progress_bar(current_value, max_value, elapsed_time=0, bar_length=50):
     """
@@ -51,7 +55,7 @@ def progress_bar(current_value, max_value, elapsed_time=0, bar_length=50):
     sys.stdout.flush()
 
 
-def apply_psd(signal_t, psd, sampling_rate=4096):
+def apply_psd(signal_t, psd, sampling_rate=4096, apply_butter=False):
     """
     Take a signal in the time domain, and a precalculated Power Spectral
     Density, and color the signal according to the given PSD.
@@ -61,6 +65,7 @@ def apply_psd(signal_t, psd, sampling_rate=4096):
         psd: A Power Spectral Density, e.g. calculated from the detector noise.
             Should be a function: psd(frequency)
         sampling_rate: Sampling rate of signal_t
+        apply_butter: Whether or not to apply a Butterworth filter to the data.
 
     Returns: color_signal_t, the colored signal in the time domain.
     """
@@ -81,8 +86,12 @@ def apply_psd(signal_t, psd, sampling_rate=4096):
     color_signal_t = np.fft.irfft(color_signal_f, n=n)
 
     # In case we want to use a Butterworth-filter, here's how to do it:
-    # bb, ab = butter(4, [20*2/4096, 300*2/4096], btype="band")
-    # color_signal_t = filtfilt(bb, ab, color_signal_t)
+    if apply_butter:
+        f_low = 1
+        f_high = 600
+        bb, ab = butter(4, [f_low*2/4096, f_high*2/4096], btype="bandpass")
+        normalization = np.sqrt((f_high - f_low) / (sampling_rate / 2))
+        color_signal_t = filtfilt(bb, ab, color_signal_t) / normalization
 
     return color_signal_t
 
@@ -155,7 +164,7 @@ class CustomArgumentParser:
         self.parser.add_argument('--sample-length',
                                  help='Sample length in seconds',
                                  type=int,
-                                 default=10)
+                                 default=12)
         self.parser.add_argument('--sampling-rate',
                                  help='Sampling rate in Hz',
                                  type=int,
@@ -163,7 +172,7 @@ class CustomArgumentParser:
         self.parser.add_argument('--n-injections',
                                  help='Number of injections per sample',
                                  type=int,
-                                 default=4)
+                                 default=2)
         self.parser.add_argument('--loudness',
                                  help='Scaling factor for injections',
                                  type=float,
@@ -219,13 +228,15 @@ class Spectrogram:
         self.injections = None
         self.labels = None
         self.noises = None
+        self.pad = 3
         self.positions = None
         self.signals = None
         self.spectrograms = None
         self.strains = None
 
-        # Create a shortcut for the length of the strain
-        self.length = self.sample_length * self.sampling_rate
+        # Add padding so that we can remove the fringe effects due to applying
+        # the PSD and calculating the spectrogram later on
+        self.length = (self.sample_length + 2 * self.pad) * self.sampling_rate
 
         # Create a random time difference between the signals for H1 and L1
         self.delta_t = np.random.uniform(-1 * max_delta_t, max_delta_t)
@@ -249,6 +260,10 @@ class Spectrogram:
         # - chirpmass: Chirp mass parameter of the injection
         # - distance: Distance parameter of the injection
         self.labels, self.chirpmasses, self.distances = self._make_labels()
+
+        # Finally, remove the padding again
+        self.spectrograms, self.labels, self.chirpmasses, self.distances = \
+            self._remove_padding()
 
     # -------------------------------------------------------------------------
 
@@ -294,12 +309,19 @@ class Spectrogram:
 
         # Initialize empty signals
         signals = dict()
-        signals['H1'] = np.zeros(self.sample_length * self.sampling_rate)
-        signals['L1'] = np.zeros(self.sample_length * self.sampling_rate)
+        signals['H1'] = np.zeros(self.length)
+        signals['L1'] = np.zeros(self.length)
 
-        # Get the starting positions for each injection
-        self.positions = np.linspace(0, self.length, 2 * self.n_injections + 2)
-        self.positions = self.positions[:-2][1::2]
+        # Get the length of a single waveform
+        waveform_length = (len(self.waveforms.iloc[0]['waveform']) /
+                           self.sampling_rate)
+
+        # Calculate the start positions of the injections
+        spacing = self.sample_length - self.n_injections * waveform_length
+        spacing = spacing / (self.n_injections + 1)
+        self.positions = [(self.pad + spacing + i * (waveform_length +
+                           spacing)) * self.sampling_rate for i in
+                          range(self.n_injections)]
 
         # Initialize an empty list for the injection meta-information
         injections = []
@@ -318,16 +340,23 @@ class Spectrogram:
             chirpmass = waveform_row['chirpmass']
             distance = waveform_row['distance']
 
+            # Now we randomly chop off between 0 and 2 seconds from the
+            # start, to make the signals variable in length
+            cut_off = np.random.uniform(0, 2)
+            waveform['H1'] = waveform['H1'][int(cut_off * self.sampling_rate):]
+            waveform['L1'] = waveform['L1'][int(cut_off * self.sampling_rate):]
+
             # If we are using simulated Gaussian noise, we have to apply the
             # PSD directly to the waveform(s)
             if self.noise_type == 'gaussian':
 
-                # Also cut off the beginning and end of the waveform, where
-                # we have weird fringing effects from the Fourier Transforms
-                waveform['H1'] = apply_psd(waveform['H1'],
-                                           self.psds['H1'])[100:-50]
-                waveform['L1'] = apply_psd(waveform['L1'],
-                                           self.psds['L1'])[100:-50]
+                # Apply the Power Spectral Density to create a colored signal
+                waveform['H1'] = apply_psd(waveform['H1'], self.psds['H1'])
+                waveform['L1'] = apply_psd(waveform['L1'], self.psds['L1'])
+
+                # Cut off spectral leakage that is due to the Fourier Transform
+                waveform['H1'] = waveform['H1'][100:-50]
+                waveform['L1'] = waveform['L1'][100:-50]
 
             # Calculate absolute starting positions of the injections
             abs_start_pos = dict()
@@ -363,6 +392,7 @@ class Spectrogram:
             # Store information about the injection we just made
             injections.append(dict(waveform_idx=waveform_idx,
                                    chirpmass=chirpmass,
+                                   cut_off=cut_off,
                                    distance=distance,
                                    rel_start_pos=rel_start_pos,
                                    rel_waveform_length=rel_waveform_length))
@@ -381,20 +411,9 @@ class Spectrogram:
         # noise and signal to 'whiten' the strain:
         if self.noise_type == 'real':
 
-            # Reflection-pad the strain to avoid fringe effects
-            # pad = 0  # int(10 * self.length)
-            # strains['H1'] = np.pad(strains['H1'], pad_width=(pad, pad),
-            #                        mode='symmetric')
-            # strains['L1'] = np.pad(strains['L1'], pad_width=(pad, pad),
-            #                       mode='symmetric')
-
             # Apply the Power Spectral Density to whiten
             strains['H1'] = apply_psd(strains['H1'], self.psds['H1'])
             strains['L1'] = apply_psd(strains['L1'], self.psds['L1'])
-
-            # Unpad the signal again
-            # strains['H1'] = strains['H1'][pad:-pad]
-            # strains['L1'] = strains['L1'][pad:-pad]
 
         return strains
 
@@ -406,7 +425,7 @@ class Spectrogram:
         # we need to call it twice and this is just more readable
         def make_spectrogram(strain):
             return melspectrogram(strain, sr=4096, n_fft=1024, hop_length=64,
-                                  n_mels=64, fmin=0, fmax=400)
+                                  n_mels=64, fmin=1, fmax=600)
 
         # Calculate the pure spectrograms
         spectrograms = dict()
@@ -476,6 +495,49 @@ class Spectrogram:
             distances['L1'][int(start['L1']):int(end['L1'])] = distance
 
         return labels, chirpmasses, distances
+
+    # -------------------------------------------------------------------------
+
+    def _remove_padding(self):
+
+        # Get the lengths of the spectrograms
+        lengths = dict()
+        lengths['H1'] = self.spectrograms['H1'].shape[1]
+        lengths['L1'] = self.spectrograms['L1'].shape[1]
+
+        # Get the start of the "inner part" with the injections
+        start = dict()
+        start['H1'] = int((lengths['H1'] / self.length) * self.sampling_rate
+                          * self.pad)
+        start['L1'] = int((lengths['H1'] / self.length) * self.sampling_rate
+                          * self.pad)
+
+        # Get the end of the "inner part" with the injections
+        end = dict()
+        end['H1'] = -start['H1']
+        end['L1'] = -start['L1']
+
+        # For the spectrograms, only select the "inner part"
+        spectrograms = dict()
+        spectrograms['H1'] = self.spectrograms['H1'][:, start['H1']:end['H1']]
+        spectrograms['L1'] = self.spectrograms['L1'][:, start['L1']:end['L1']]
+
+        # For the label vectors, only select the "inner part"
+        labels = dict()
+        labels['H1'] = self.labels['H1'][start['H1']:end['H1']]
+        labels['L1'] = self.labels['L1'][start['L1']:end['L1']]
+
+        # For the chirpmass vectors, only select the "inner part"
+        chirpmasses = dict()
+        chirpmasses['H1'] = self.chirpmasses['H1'][start['H1']:end['H1']]
+        chirpmasses['L1'] = self.chirpmasses['L1'][start['L1']:end['L1']]
+
+        # For the distances vectors, only select the "inner part"
+        distances = dict()
+        distances['H1'] = self.distances['H1'][start['H1']:end['H1']]
+        distances['L1'] = self.distances['L1'][start['L1']:end['L1']]
+
+        return spectrograms, labels, chirpmasses, distances
 
     # -------------------------------------------------------------------------
 
