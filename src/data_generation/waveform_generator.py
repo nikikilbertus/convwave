@@ -74,17 +74,18 @@ class WaveformGenerator:
         n_samples = len(self.config['injections'])
         duration = self.config['meta']['duration']
         sample_rate = self.config['meta']['sample_rate']
-        N = int(duration * sample_rate)
 
         # Collect indices of failures during waveform generation
         # Sometimes the model just fail to compute the requested waveform.
         # This indicates that one should choose different parameter regions.
         failed = []
         # Compute the waveforms
-        with h5py.File(self.output_file, 'w') as f:
-            f.create_dataset('waveforms', (n_samples, N))
+        print("Generate the waveforms...", end=' ')
+        # If the duration is smaller 0, all waveforms are kept in full length
+        if duration > 0:
+            N = int(duration * sample_rate)
+            waveforms = np.zeros((n_samples, N))
 
-            print("Generate the waveforms...")
             for i, conf in enumerate(tqdm(self.config['injections'])):
                 x = np.zeros(N)
                 try:
@@ -104,12 +105,40 @@ class WaveformGenerator:
                     print("Failure {}\n during waveform {}: {}".format(err,
                                                                        i,
                                                                        conf))
-                f['waveforms'][i, :] = x
-            print("DONE")
+                waveforms[i, :] = x
+        else:
+            waveforms_raw = []
+            for i, conf in enumerate(tqdm(self.config['injections'])):
+                try:
+                    # Compute the current waveform
+                    hp, cp = tuple(map(np.array, get_td_waveform(**conf)))
+                    waveforms_raw.append(hp)
 
-            # Write the config and the failed ones to the output hdf file
+                    # Get the correct indices to inject it into the noise
+                    inj_time = conf['injection_time']
+                except Exception as e:
+                    # If waveform fails, remember the index
+                    # and keep the waveform as all zeros
+                    waveforms_raw.append(np.zeros(1))
+                    failed.append(i)
+                    err = type(e).__name__
+                    print("Failure {}\n during waveform {}: {}".format(err,
+                                                                       i,
+                                                                       conf))
+            N = max(map(len, waveforms_raw))
+            waveforms = np.zeros((n_samples, N))
+            for i, x in enumerate(waveforms_raw):
+                waveforms[i, :len(x)] = x
+                inj_time = np.argmax(x) / float(N)
+                self.config['injections'][i]['injection_time'] = inj_time
+        print("DONE")
+
+        print("Save everything to file...", end=' ')
+        with h5py.File(self.output_file, 'w') as f:
+            f['waveforms'] = waveforms
             f['config'] = np.string_(json.dumps(self.config))
             f['failed'] = failed
+        print("DONE")
 
     def plot_waveform(self, index=0):
         """
@@ -210,7 +239,7 @@ class WaveformConfigGenerator:
         """
         injections = []
         print("Sampling the waveform parameters...", end=' ')
-        for i in xrange(self.n_samples):
+        for i in range(self.n_samples):
             cp = self.default_parameters.copy()
             # Set the id first as counter
             cp.update({'id': i})
@@ -263,7 +292,13 @@ def generate_meta_config(output_file='../data/meta_config.json'):
     """
     print("Generate meta config file {}...".format(output_file), end=' ')
     n_samples = 1024
-    duration = 1.
+    # If the duration is < 0.0 the whole waveform will be used.
+    # All waveforms will be padded to the right with zeros to the length of the
+    # longest generated waveform.
+    # Then the injection times are overriden(!) in the config file coming with
+    # the output h5 file with the fraction where the maximum of the waveform
+    # lies within the whole sample.
+    duration = -1.
     sample_rate = 4096
     # Default parameters passed to simulator in case a parameter is not sampled
 
@@ -297,7 +332,7 @@ def generate_meta_config(output_file='../data/meta_config.json'):
     update_list = {
         'masses': [2., 50.],
         # 'injection_time': [0.5, 0.9],
-        'distance': [1500., 2500.]
+        'distance': [400., 800.]
     }
 
     # Collect everything in a big meta config dictionary
