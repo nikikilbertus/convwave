@@ -12,6 +12,8 @@ import h5py
 from samplegenerators import CustomArgumentParser, Spectrogram, TimeSeries
 from tools import get_psd, get_waveforms_as_dataframe, progress_bar
 
+from IPython import embed
+
 
 # -----------------------------------------------------------------------------
 # MAIN CODE
@@ -86,10 +88,10 @@ if __name__ == '__main__':
     # -------------------------------------------------------------------------
 
     if sample_type == 'timeseries':
-        MakeSample = Spectrogram
+        MakeSample = TimeSeries
         method_name = "get_timeseries"
     else:
-        MakeSample = TimeSeries
+        MakeSample = Spectrogram
         method_name = "get_spectrograms"
 
     # Initialize a dict of lists where we store our results
@@ -117,7 +119,7 @@ if __name__ == '__main__':
                             max_delta_t=0.1)
 
         # Store away Spectrogram / TimeSeries and labels
-        results[sample_type].append(getattr(sample, method_name))
+        results[sample_type].append(getattr(sample, method_name)())
         results['labels'].append(sample.get_label())
         results['chirpmasses'].append(sample.get_chirpmass())
         results['distances'].append(sample.get_distance())
