@@ -26,7 +26,7 @@ from torch.optim import lr_scheduler
 # FUNCTION DEFINITIONS
 # -----------------------------------------------------------------------------
 
-def create_weights(label, start_size=20, end_size=3):
+def create_weights(label, start_size=40, end_size=3):
     """
     Create the weights ('grayzones') for a given label.
 
@@ -290,7 +290,7 @@ if __name__ == "__main__":
 
     # Which distances and sample size are we using?
     distances = '0100_0300'
-    sample_size = '4k'
+    sample_size = '8k'
 
     # Where does our data live and which file should we use?
     data_path = '../data/'
@@ -316,8 +316,9 @@ if __name__ == "__main__":
     # SET UP A LOGGER FOR TENSORBOARD VISUALIZATION
     # -------------------------------------------------------------------------
 
-    now = datetime.datetime.now()
-    writer = SummaryWriter(log_dir='logs/{:%Y-%m-%d_%H:%M:%S}'.format(now))
+    run_start = datetime.datetime.now()
+    run_start_formatted = '{:%Y-%m-%d_%H:%M:%S}'.format(run_start)
+    writer = SummaryWriter(log_dir='logs/{}'.format(run_start_formatted))
 
     #
     # -------------------------------------------------------------------------
@@ -460,7 +461,7 @@ if __name__ == "__main__":
 
         #
         # ---------------------------------------------------------------------
-        # PRINT FINAL PROGRESS AND LOG STUFF FOR TENSORBOARD VISUALIZATION
+        # PRINT FINAL PROGRESS BAR AND LOG STUFF FOR TENSORBOARD VISUALIZATION
         # ---------------------------------------------------------------------
 
         # Get the current learning rate... TODO: is this really the only way?!
@@ -489,7 +490,31 @@ if __name__ == "__main__":
         log('val_hamming_dist', val_hamm/n_minibatches_validation)
         log('learning_rate', lr)
 
-        # Reduce the learning rate if appropriate
+        #
+        # ---------------------------------------------------------------------
+        # SAVE SNAPSHOTS OF THE MODEL'S WEIGHTS (EVERY N EPOCHS)
+        # ---------------------------------------------------------------------
+
+        if epoch % 1 == 0:
+
+            # Check if the appropriate directory for this run exists
+            snapshot_dir = os.path.join('./weights/', run_start_formatted)
+            if not os.path.exists(snapshot_dir):
+                os.makedirs(snapshot_dir)
+
+            # Save the weights for the current epoch ("snapshot")
+            dummy = [distances, sample_size, epoch]
+            weights_file_name = 'weights_{}_{}_epoch-{:03d}.net'.format(*dummy)
+            weights_file_path = os.path.join(snapshot_dir, weights_file_name)
+            torch.save(net.state_dict(), weights_file_path)
+
+            # TODO: Maybe delete the older snapshots?
+
+        #
+        # ---------------------------------------------------------------------
+        # REDUCE THE LEARNING RATE IF APPROPRIATE
+        # ---------------------------------------------------------------------
+
         scheduler.step(val_loss/n_minibatches_validation)
 
     # -------------------------------------------------------------------------
