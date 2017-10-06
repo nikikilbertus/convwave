@@ -53,7 +53,7 @@ def progress_bar(current_value, max_value, elapsed_time=0, bar_length=50):
 # -----------------------------------------------------------------------------
 
 
-def apply_psd(signal_t, psd, sampling_rate=4096, apply_butter=False):
+def apply_psd(signal_t, psd, sampling_rate=4096, apply_butter=True):
     """
     Take a signal in the time domain, and a precalculated Power Spectral
     Density, and color the signal according to the given PSD.
@@ -87,8 +87,8 @@ def apply_psd(signal_t, psd, sampling_rate=4096, apply_butter=False):
     if apply_butter:
 
         # Define cut-off frequencies for the filter
-        f_low = 1
-        f_high = 600
+        f_low = 42
+        f_high = 800
 
         # Calculate Butterworth-filter and normalization
         numerator, denominator = butter(4, [f_low*2/4096, f_high*2/4096],
