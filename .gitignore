@@ -10,6 +10,7 @@
 
 ### Weights and Logs folders ###
 src/train/logs/*/
+src/train/weights/*/*.net
 src/train/weights/*.net
 
 ### LaTeX ###
