@@ -19,14 +19,14 @@ from torch.autograd import Variable
 from torch.utils.data import TensorDataset, DataLoader
 from torch.optim import lr_scheduler
 
-from models import SpectrogramFCN
+from models import TimeSeriesFCN
 
 
 # -----------------------------------------------------------------------------
 # FUNCTION DEFINITIONS
 # -----------------------------------------------------------------------------
 
-def create_weights(label, start_size=40, end_size=3):
+def create_weights(label, start_size=1000, end_size=200):
     """
     Create the weights ('grayzones') for a given label.
 
@@ -149,12 +149,13 @@ def load_data_as_tensor_datasets(file_path, split_ratios=(0.7, 0.2, 0.1),
     # Read in the spectrograms from the HDF file
     with h5py.File(file_path, 'r') as file:
 
-        x = np.array(file['spectrograms'])
+        x = np.array(file['timeseries'])
         y = np.array(file['labels'])
 
     # Swap axes around to get to NCHW format
     x = np.swapaxes(x, 1, 3)
     x = np.swapaxes(x, 2, 3)
+    x = np.squeeze(x)
 
     # Generate the indices for training, test and validation
     idx = np.arange(len(x))
@@ -206,13 +207,13 @@ if __name__ == "__main__":
 
     # Which distances and sample size are we using?
     distances = '0100_0300'
-    sample_size = '8k'
+    sample_size = '4k'
 
     # Where does our data live and which file should we use?
     data_path = '../data/'
-    file_name = 'training_{}_{}.h5'.format(distances, sample_size)
+    file_name = 'samples_timeseries_{}_{}.h5'.format(distances, sample_size)
 
-    file_path = os.path.join(data_path, 'training', file_name)
+    file_path = os.path.join(data_path, 'training', 'timeseries', file_name)
 
     #
     # -------------------------------------------------------------------------
@@ -235,6 +236,8 @@ if __name__ == "__main__":
     run_start = datetime.datetime.now()
     run_start_formatted = '{:%Y-%m-%d_%H:%M:%S}'.format(run_start)
     writer = SummaryWriter(log_dir='logs/{}'.format(run_start_formatted))
+    writer.add_text(tag='Description',
+                    text_string='Some text that describes this run.')
 
     #
     # -------------------------------------------------------------------------
@@ -242,7 +245,8 @@ if __name__ == "__main__":
     # -------------------------------------------------------------------------
 
     # Set up the net and make it CUDA ready; activate GPU parallelization
-    model = SpectrogramFCN()
+    # model = SpectrogramFCN()
+    model = TimeSeriesFCN()
     model.float().cuda()
     model = torch.nn.DataParallel(model)
 
@@ -252,7 +256,7 @@ if __name__ == "__main__":
     # net.load_state_dict(torch.load(weights_file))
 
     # Set up the optimizer and the initial learning rate, and zero parameters
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
     optimizer.zero_grad()
 
     # Set up the learning schedule to reduce the LR on plateaus
@@ -267,7 +271,7 @@ if __name__ == "__main__":
     n_minibatches_validation = np.ceil(len(data_validation) / batch_size)
 
     # Fix the number of epochs to train for
-    n_epochs = 30
+    n_epochs = 40
 
     #
     # -------------------------------------------------------------------------
