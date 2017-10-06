@@ -9,17 +9,17 @@ import sys
 import time
 import datetime
 
-from IPython import embed
 from tensorboard import SummaryWriter
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as func
 import torch.optim as optim
 
 from torch.autograd import Variable
 from torch.utils.data import TensorDataset, DataLoader
 from torch.optim import lr_scheduler
+
+from models import SpectrogramFCN
 
 
 # -----------------------------------------------------------------------------
@@ -192,90 +192,6 @@ def load_data_as_tensor_datasets(file_path, split_ratios=(0.7, 0.2, 0.1),
 
 
 # -----------------------------------------------------------------------------
-# DEFINE THE MODEL FOR THE FULLY CONVOLUTIONAL NET (FCN)
-# -----------------------------------------------------------------------------
-
-class Net(nn.Module):
-
-    # -------------------------------------------------------------------------
-    # Initialize the net and define functions for the layers
-    # -------------------------------------------------------------------------
-
-    def __init__(self):
-
-        # Inherit from the PyTorch neural net module
-        super(Net, self).__init__()
-
-        # Convolutional layers: (in_channels, out_channels, kernel_size)
-        self.conv1 = nn.Conv2d(in_channels=2, out_channels=128,
-                               kernel_size=(3, 7), padding=(1, 3), stride=1)
-        self.conv2 = nn.Conv2d(in_channels=128, out_channels=128,
-                               kernel_size=(3, 7), padding=(1, 6),
-                               stride=1, dilation=(1, 2))
-        self.conv3 = nn.Conv2d(in_channels=128, out_channels=128,
-                               kernel_size=(3, 7), padding=(1, 6),
-                               stride=1, dilation=(1, 2))
-        self.conv4 = nn.Conv2d(in_channels=128, out_channels=128,
-                               kernel_size=(3, 7), padding=(1, 6),
-                               stride=1, dilation=(1, 2))
-        self.conv5 = nn.Conv2d(in_channels=128, out_channels=128,
-                               kernel_size=(3, 7), padding=(1, 6),
-                               stride=1, dilation=(1, 2))
-        self.conv6 = nn.Conv2d(in_channels=128, out_channels=128,
-                               kernel_size=(3, 7), padding=(1, 6),
-                               stride=1, dilation=(1, 2))
-        self.conv7 = nn.Conv2d(in_channels=128, out_channels=128,
-                               kernel_size=(3, 7), padding=(1, 6),
-                               stride=1, dilation=(1, 2))
-        self.conv8 = nn.Conv2d(in_channels=128, out_channels=1,
-                               kernel_size=(1, 1), padding=(0, 0), stride=1)
-
-        # Batch norm layers
-        self.batchnorm1 = nn.BatchNorm2d(num_features=128)
-        self.batchnorm2 = nn.BatchNorm2d(num_features=128)
-        self.batchnorm3 = nn.BatchNorm2d(num_features=128)
-        self.batchnorm4 = nn.BatchNorm2d(num_features=128)
-        self.batchnorm5 = nn.BatchNorm2d(num_features=128)
-        self.batchnorm6 = nn.BatchNorm2d(num_features=128)
-
-        # Pooling layers
-        self.pool = nn.MaxPool2d(kernel_size=(2, 1), stride=(2, 1))
-
-    # -------------------------------------------------------------------------
-    # Define a forward pass through the network (apply the layers)
-    # -------------------------------------------------------------------------
-
-    def forward(self, x):
-
-        # Layer 1
-        # ---------------------------------------------------------------------
-        x = self.conv1(x)
-        x = func.elu(x)
-
-        # Layers 2 to 3
-        # ---------------------------------------------------------------------
-        convolutions = [self.conv2, self.conv3, self.conv4, self.conv5,
-                        self.conv6, self.conv7]
-        batchnorms = [self.batchnorm1, self.batchnorm2, self.batchnorm3,
-                      self.batchnorm4, self.batchnorm5, self.batchnorm6]
-
-        for conv, batchnorm in zip(convolutions, batchnorms):
-            x = conv(x)
-            x = batchnorm(x)
-            x = func.elu(x)
-            x = self.pool(x)
-
-        # Layer 8
-        # ---------------------------------------------------------------------
-        x = self.conv8(x)
-        x = func.sigmoid(x)
-
-        return x
-
-    # -------------------------------------------------------------------------
-
-
-# -----------------------------------------------------------------------------
 # MAIN CODE
 # -----------------------------------------------------------------------------
 
@@ -326,9 +242,9 @@ if __name__ == "__main__":
     # -------------------------------------------------------------------------
 
     # Set up the net and make it CUDA ready; activate GPU parallelization
-    net = Net()
-    net.float().cuda()
-    net = torch.nn.DataParallel(net)
+    model = SpectrogramFCN()
+    model.float().cuda()
+    model = torch.nn.DataParallel(model)
 
     # If desired, load weights from pre-trained model
     # TODO: Make this accessible through command line options!
@@ -336,7 +252,7 @@ if __name__ == "__main__":
     # net.load_state_dict(torch.load(weights_file))
 
     # Set up the optimizer and the initial learning rate, and zero parameters
-    optimizer = optim.Adam(net.parameters(), lr=0.0001)
+    optimizer = optim.Adam(model.parameters(), lr=0.0001)
     optimizer.zero_grad()
 
     # Set up the learning schedule to reduce the LR on plateaus
@@ -390,7 +306,7 @@ if __name__ == "__main__":
             optimizer.zero_grad()
 
             # Forward pass through the net and reshape outputs properly
-            outputs = net.forward(inputs)
+            outputs = model.forward(inputs)
             outputs = outputs.view((outputs.size()[0], outputs.size()[-1]))
 
             # Calculate weights and set up the loss function
@@ -438,7 +354,7 @@ if __name__ == "__main__":
             inputs, labels = Variable(inputs).cuda(), Variable(labels).cuda()
 
             # Forward pass through the net and reshape outputs properly
-            outputs = net.forward(inputs)
+            outputs = model.forward(inputs)
             outputs = outputs.view((outputs.size()[0], outputs.size()[-1]))
 
             # Get the size of the mini-batch
@@ -506,7 +422,7 @@ if __name__ == "__main__":
             dummy = [distances, sample_size, epoch]
             weights_file_name = 'weights_{}_{}_epoch-{:03d}.net'.format(*dummy)
             weights_file_path = os.path.join(snapshot_dir, weights_file_name)
-            torch.save(net.state_dict(), weights_file_path)
+            torch.save(model.state_dict(), weights_file_path)
 
             # TODO: Maybe delete the older snapshots?
 
@@ -526,7 +442,7 @@ if __name__ == "__main__":
     print('Saving model...', end=' ')
     weights_file = ('./weights/pytorch_model_weights_{}_{}.net'.
                     format(distances, sample_size))
-    torch.save(net.state_dict(), weights_file)
+    torch.save(model.state_dict(), weights_file)
     print('Done!')
 
     #
@@ -552,7 +468,7 @@ if __name__ == "__main__":
         inputs, labels = Variable(inputs).cuda(), Variable(labels).cuda()
 
         # Make predictions for the given mini-batch
-        outputs = net.forward(inputs)
+        outputs = model.forward(inputs)
         outputs = outputs.view((outputs.size()[0], outputs.size()[-1]))
         outputs = outputs.data.cpu().numpy()
 
