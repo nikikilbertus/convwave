@@ -14,7 +14,7 @@ import pandas as pd
 import h5py
 
 from matplotlib import mlab
-from scipy.signal import butter, filtfilt
+from scipy.signal import butter, filtfilt, medfilt, hilbert
 from scipy.interpolate import interp1d
 
 
@@ -193,3 +193,72 @@ def get_waveforms_as_dataframe(waveforms_path):
 
     # Return the final DataFrame
     return dataframe
+
+
+# -----------------------------------------------------------------------------
+
+
+def get_start_end_idx(waveform):
+    """
+    Take a raw waveform and return the indices when the signal actually
+    begins and ends, i.e. the indices of the first non-zero elements in the
+    (reversed) waveform.
+
+    Args:
+        waveform: A raw waveform, i.e. one that still is zero-padded.
+
+    Returns:
+        start, end: The indices where the signal begins / ends.
+
+    """
+
+    # Initialize empty variables for the beginning / end
+    start = None
+    end = None
+
+    # Find the start of the signal
+    for j in range(len(waveform)):
+        if waveform[j] != 0:
+            start = j
+            break
+
+    # Find the end of the signal
+    for j in sorted(range(len(waveform)), reverse=True):
+        if waveform[j] != 0:
+            end = j
+            break
+
+    return start, end
+
+
+# -----------------------------------------------------------------------------
+
+
+def get_envelope(signal):
+    # Pad the signal with zeros at the beginning and end to reduce edge effects
+    padded_signal = np.pad(signal, 100, 'constant', constant_values=0)
+
+    # Calculate the raw envelope using the Hilbert transformation
+    analytic_signal = hilbert(padded_signal)
+    amplitude_envelope = np.abs(analytic_signal)
+
+    # Smoothen the envelope using a median filter and a rolling average
+    smooth = amplitude_envelope
+    smooth[0:200] = medfilt(smooth[0:200], kernel_size=25)
+    smooth = np.convolve(smooth, np.ones(10), mode='same') / 10
+
+    # Remove the zero padding again to match the original signal length
+    result = smooth[100:-100]
+
+    return result
+
+
+# -----------------------------------------------------------------------------
+
+
+def resample_vector(vector, new_length):
+
+    interpolation = interp1d(range(len(vector)), vector, 'linear')
+    grid = np.linspace(0, len(vector)-1, new_length)
+
+    return np.round(interpolation(grid))

@@ -8,8 +8,9 @@ import argparse
 
 from librosa.feature import melspectrogram
 from librosa import logamplitude
+from scipy.interpolate import interp1d
 
-from tools import apply_psd
+from tools import apply_psd, get_start_end_idx, get_envelope, resample_vector
 
 
 # -----------------------------------------------------------------------------
@@ -37,8 +38,8 @@ class CustomArgumentParser:
                                  help='Sampling rate in Hz',
                                  type=int,
                                  default=4096)
-        self.parser.add_argument('--n-injections',
-                                 help='Number of injections per sample',
+        self.parser.add_argument('--max-n-injections',
+                                 help='Max number of injections per sample',
                                  type=int,
                                  default=2)
         self.parser.add_argument('--loudness',
@@ -88,14 +89,14 @@ class CustomArgumentParser:
 
 class SampleGenerator:
 
-    def __init__(self, sample_length, sampling_rate, n_injections,
+    def __init__(self, sample_length, sampling_rate, max_n_injections,
                  waveforms, real_strains, psds, noise_type, max_delta_t=0.0,
                  loudness=1.0, pad=3.0):
 
         # Store all parameters passed as arguments
         self.sample_length = sample_length
         self.sampling_rate = sampling_rate
-        self.n_injections = n_injections
+        self.max_n_injections = max_n_injections
         self.waveforms = waveforms
         self.real_strains = real_strains
         self.pad = pad
@@ -107,12 +108,14 @@ class SampleGenerator:
         # Initialize all other class attributes
         self.chirpmasses = None
         self.distances = None
-        self.injections = None
         self.labels = None
         self.noises = None
         self.positions = None
         self.signals = None
         self.strains = None
+
+        # Randomly choose the number of injections for this sample
+        self.n_injections = np.random.randint(0, self.max_n_injections + 1)
 
         # Add padding so that we can remove the fringe effects due to applying
         # the PSD and calculating the spectrogram later on
@@ -127,8 +130,11 @@ class SampleGenerator:
         # noise or real noise from the detector recordings)
         self.noises = self._make_noises()
 
-        # Create the signals by making some injections
-        self.signals, self.injections = self._make_signals()
+        # Create the signals and the label vectors by making some injections
+        # NOTE: In case of the spectrograms, the labels need to be resized to
+        # match the length of the spectrogram!
+        self.signals, self.labels, self.chirpmasses, self.distances = \
+            self._make_signals()
 
         # Calculate the strains as the sum of the noises and the signals
         self.strains = self._make_strains()
@@ -175,12 +181,14 @@ class SampleGenerator:
 
     def _make_signals(self):
 
-        # Initialize empty signals
-        signals = dict()
-        signals['H1'] = np.zeros(self.length)
-        signals['L1'] = np.zeros(self.length)
+        # Initialize empty vectors for the signal and the labels
+        signals = {'H1': np.zeros(self.length), 'L1': np.zeros(self.length)}
+        labels = {'H1': np.zeros(self.length), 'L1': np.zeros(self.length)}
+        chirpmasses = {'H1': np.zeros(self.length),
+                       'L1': np.zeros(self.length)}
+        distances = {'H1': np.zeros(self.length), 'L1': np.zeros(self.length)}
 
-        # Get the length of a single waveform
+        # Get the length of a single raw (!) waveform
         waveform_length = (len(self.waveforms.iloc[0]['waveform']) /
                            self.sampling_rate)
 
@@ -191,9 +199,6 @@ class SampleGenerator:
                            spacing)) * self.sampling_rate for i in
                           range(self.n_injections)]
 
-        # Initialize an empty list for the injection meta-information
-        injections = []
-
         # Loop over all injections to be made
         for inj_number in range(self.n_injections):
 
@@ -201,18 +206,28 @@ class SampleGenerator:
             waveform_idx = np.random.randint(len(self.waveforms))
             waveform_row = self.waveforms.iloc[waveform_idx]
 
-            # Extract the waveform, chirpmass and distance from that row
-            waveform = dict()
-            waveform['H1'] = waveform_row['waveform']
-            waveform['L1'] = waveform_row['waveform']
+            # Extract the chirpmass and distance from that row
             chirpmass = waveform_row['chirpmass']
             distance = waveform_row['distance']
 
-            # Now we randomly chop off between 0 and 2 seconds from the
-            # start, to make the signals variable in length
-            cut_off = np.random.uniform(0, 2)
-            waveform['H1'] = waveform['H1'][int(cut_off * self.sampling_rate):]
-            waveform['L1'] = waveform['L1'][int(cut_off * self.sampling_rate):]
+            # Get the raw waveform from that row and then remove the
+            # zero-padding from it to get the pure waveform
+            start, end = get_start_end_idx(waveform_row['waveform'])
+            pure_waveform = waveform_row['waveform'][start:end]
+
+            # If the pure waveform is at least 1 second long, we randomize its
+            # length to something between 1 and <pure_waveform_length> seconds:
+            pure_waveform_length = len(pure_waveform) / self.sampling_rate
+            if pure_waveform_length > 1:
+                cut_off = np.random.uniform(0, pure_waveform_length - 1)
+                pure_waveform = pure_waveform[int(cut_off*self.sampling_rate):]
+
+            # Now set the pure waveform as the waveform for H1 and L1. This
+            # is necessary, because in the next step we (possibly) apply the
+            # PSD, which is different for the two detectors.
+            waveform = dict()
+            waveform['H1'] = self.loudness * pure_waveform
+            waveform['L1'] = self.loudness * pure_waveform
 
             # If we are using simulated Gaussian noise, we have to apply the
             # PSD directly to the waveform(s)
@@ -226,46 +241,45 @@ class SampleGenerator:
                 waveform['H1'] = waveform['H1'][100:-50]
                 waveform['L1'] = waveform['L1'][100:-50]
 
+            # Now calculate the envelopes of these waveforms
+            waveform_envelope = dict()
+            waveform_envelope['H1'] = get_envelope(waveform['H1'])
+            waveform_envelope['L1'] = get_envelope(waveform['L1'])
+
             # Calculate absolute starting positions of the injections
-            abs_start_pos = dict()
-            abs_start_pos['H1'] = self.positions[inj_number]
-            abs_start_pos['L1'] = self.positions[inj_number] + self.offset
+            start_pos = dict()
+            start_pos['H1'] = int(self.positions[inj_number])
+            start_pos['L1'] = int(self.positions[inj_number] + self.offset)
 
             # Calculate absolute waveform lengths of the injections
-            abs_waveform_length = dict()
-            abs_waveform_length['H1'] = len(waveform['H1'])
-            abs_waveform_length['L1'] = len(waveform['L1'])
-
-            # Calculate relative starting positions of the injections
-            rel_start_pos = dict()
-            rel_start_pos['H1'] = abs_start_pos['H1'] / len(signals['H1'])
-            rel_start_pos['L1'] = abs_start_pos['L1'] / len(signals['H1'])
-
-            # Calculate relative waveform lengths of the injections
-            rel_waveform_length = dict()
-            rel_waveform_length['H1'] = abs_waveform_length['H1'] / self.length
-            rel_waveform_length['L1'] = abs_waveform_length['L1'] / self.length
+            waveform_length = dict()
+            waveform_length['H1'] = len(waveform['H1'])
+            waveform_length['L1'] = len(waveform['L1'])
 
             # Calculate the absolute end position of the injection
-            abs_end_pos = dict()
-            abs_end_pos['H1'] = abs_start_pos['H1'] + abs_waveform_length['H1']
-            abs_end_pos['L1'] = abs_start_pos['L1'] + abs_waveform_length['L1']
+            end_pos = dict()
+            end_pos['H1'] = int(start_pos['H1'] + waveform_length['H1'])
+            end_pos['L1'] = int(start_pos['L1'] + waveform_length['L1'])
 
             # Make the injection, i.e. add the waveform to the signal
-            signals['H1'][int(abs_start_pos['H1']):int(abs_end_pos['H1'])] += \
-                self.loudness * waveform['H1']
-            signals['L1'][int(abs_start_pos['L1']):int(abs_end_pos['L1'])] += \
-                self.loudness * waveform['L1']
+            signals['H1'][start_pos['H1']:end_pos['H1']] += waveform['H1']
+            signals['L1'][start_pos['L1']:end_pos['L1']] += waveform['L1']
 
-            # Store information about the injection we just made
-            injections.append(dict(waveform_idx=waveform_idx,
-                                   chirpmass=chirpmass,
-                                   cut_off=cut_off,
-                                   distance=distance,
-                                   rel_start_pos=rel_start_pos,
-                                   rel_waveform_length=rel_waveform_length))
+            # Create the envelope vector
+            labels['H1'][start_pos['H1']:end_pos['H1']] += \
+                waveform_envelope['H1']
+            labels['L1'][start_pos['L1']:end_pos['L1']] += \
+                waveform_envelope['L1']
 
-        return signals, injections
+            # Create the chirpmasses vector
+            chirpmasses['H1'][start_pos['H1']:end_pos['H1']] += chirpmass
+            chirpmasses['L1'][start_pos['L1']:end_pos['L1']] += chirpmass
+
+            # Create the distances vector
+            distances['H1'][start_pos['H1']:end_pos['H1']] += distance
+            distances['L1'][start_pos['L1']:end_pos['L1']] += distance
+
+        return signals, labels, chirpmasses, distances
 
     # -------------------------------------------------------------------------
 
@@ -287,59 +301,6 @@ class SampleGenerator:
 
     # -------------------------------------------------------------------------
 
-    def _make_labels(self, lengths):
-
-        # Initialize an empty vector for the label (injection yes / no?)
-        labels = dict()
-        labels['H1'] = np.zeros(lengths['H1'])
-        labels['L1'] = np.zeros(lengths['L1'])
-
-        # Initialize an empty vector for the chirpmass
-        chirpmasses = dict()
-        chirpmasses['H1'] = np.zeros(lengths['H1'])
-        chirpmasses['L1'] = np.zeros(lengths['L1'])
-
-        # Initialize an empty vector for the distance
-        distances = dict()
-        distances['H1'] = np.zeros(lengths['H1'])
-        distances['L1'] = np.zeros(lengths['L1'])
-
-        # Loop over the injections we made and add set the label to 1 at
-        # every point where there should be an injection present
-        for injection in self.injections:
-
-            # Shortcut for the chirpmass and distance of this injection
-            chirpmass = injection['chirpmass']
-            distance = injection['distance']
-
-            # Calculate start positions
-            start = dict()
-            start['H1'] = injection['rel_start_pos']['H1'] * lengths['H1']
-            start['L1'] = injection['rel_start_pos']['L1'] * lengths['L1']
-
-            # Calculate end positions
-            end = dict()
-            end['H1'] = start['H1'] + (injection['rel_waveform_length']['H1'] *
-                                       lengths['H1'])
-            end['L1'] = start['L1'] + (injection['rel_waveform_length']['L1'] *
-                                       lengths['L1'])
-
-            # Set the labels vector
-            labels['H1'][int(start['H1']):int(end['H1'])] = 1
-            labels['L1'][int(start['L1']):int(end['L1'])] = 1
-
-            # Set the chirpmasses vector
-            chirpmasses['H1'][int(start['H1']):int(end['H1'])] = chirpmass
-            chirpmasses['L1'][int(start['L1']):int(end['L1'])] = chirpmass
-
-            # Set the distances vector
-            distances['H1'][int(start['H1']):int(end['H1'])] = distance
-            distances['L1'][int(start['L1']):int(end['L1'])] = distance
-
-        return labels, chirpmasses, distances
-
-    # -------------------------------------------------------------------------
-
     @abc.abstractmethod
     def _remove_padding(self):
         raise NotImplementedError()
@@ -348,7 +309,7 @@ class SampleGenerator:
 
     def get_label(self):
 
-        return np.maximum(self.labels['H1'], self.labels['L1']).astype('int')
+        return np.maximum(self.labels['H1'], self.labels['L1'])
 
     # -------------------------------------------------------------------------
 
@@ -371,14 +332,21 @@ class SampleGenerator:
 
 class Spectrogram(SampleGenerator):
 
-    def __init__(self, sample_length, sampling_rate, n_injections,
+    def __init__(self, sample_length, sampling_rate, max_n_injections,
                  waveforms, real_strains, psds, noise_type, max_delta_t=0.0,
                  loudness=1.0, pad=3.0):
 
         # Inherit from the SampleGenerator base class
-        super().__init__(sample_length, sampling_rate, n_injections,
-                         waveforms, real_strains, psds, noise_type,
-                         max_delta_t, loudness, pad)
+        super().__init__(sample_length=sample_length,
+                         sampling_rate=sampling_rate,
+                         max_n_injections=max_n_injections,
+                         waveforms=waveforms,
+                         real_strains=real_strains,
+                         psds=psds,
+                         noise_type=noise_type,
+                         max_delta_t=max_delta_t,
+                         loudness=loudness,
+                         pad=pad)
 
         # Add a variable for the spectrograms
         self.spectrograms = None
@@ -390,11 +358,30 @@ class Spectrogram(SampleGenerator):
         label_lengths = {'H1': self.spectrograms['H1'].shape[1],
                          'L1': self.spectrograms['L1'].shape[1]}
         self.labels, self.chirpmasses, self.distances = \
-            self._make_labels(lengths=label_lengths)
+            self._rescale_labels(new_lengths=label_lengths)
 
         # Finally, remove the padding again
         self.spectrograms, self.labels, self.chirpmasses, self.distances = \
             self._remove_padding()
+
+    # -------------------------------------------------------------------------
+
+    def _rescale_labels(self, new_lengths):
+
+        # Rescale the labels to the length of the spectrogram using a
+        # linear interpolation that is evaluated on a grid
+        labels = {'H1': resample_vector(self.labels['H1'], new_lengths['H1']),
+                  'L1': resample_vector(self.labels['L1'], new_lengths['L1'])}
+        chirpmasses = {'H1': resample_vector(self.chirpmasses['H1'],
+                                             new_lengths['H1']),
+                       'L1': resample_vector(self.chirpmasses['L1'],
+                                             new_lengths['L1'])}
+        distances = {'H1': resample_vector(self.distances['H1'],
+                                           new_lengths['H1']),
+                     'L1': resample_vector(self.distances['L1'],
+                                           new_lengths['L1'])}
+
+        return labels, chirpmasses, distances
 
     # -------------------------------------------------------------------------
 
@@ -475,28 +462,31 @@ class Spectrogram(SampleGenerator):
 
 class TimeSeries(SampleGenerator):
 
-    def __init__(self, sample_length, sampling_rate, n_injections,
+    def __init__(self, sample_length, sampling_rate, max_n_injections,
                  waveforms, real_strains, psds, noise_type, max_delta_t=0.0,
                  loudness=1.0, pad=3.0):
 
         # Inherit from the SampleGenerator base class
-        super().__init__(sample_length, sampling_rate, n_injections,
-                         waveforms, real_strains, psds, noise_type,
-                         max_delta_t, loudness, pad)
+        super().__init__(sample_length=sample_length,
+                         sampling_rate=sampling_rate,
+                         max_n_injections=max_n_injections,
+                         waveforms=waveforms,
+                         real_strains=real_strains,
+                         psds=psds,
+                         noise_type=noise_type,
+                         max_delta_t=max_delta_t,
+                         loudness=loudness,
+                         pad=pad)
 
-        # Calculate the labels for this spectrogram:
-        label_lengths = {'H1': len(self.strains['H1']),
-                         'L1': len(self.strains['L1'])}
-        self.labels, self.chirpmasses, self.distances = \
-            self._make_labels(lengths=label_lengths)
+        print('Generating a TimeSeries...')
 
         # Remove the padding again
-        self.strains, self.labels, self.chirpmasses, self.distances = \
-            self._remove_padding()
+        self.strains, self.signals, self.noises, self.labels, \
+            self.chirpmasses, self.distances = self._remove_padding()
 
         # Down-sample to 2048 Hz
-        self.strains, self.labels, self.chirpmasses, self.distances = \
-            self._downsample()
+        self.strains, self.signals, self.noises, self.labels, \
+            self.chirpmasses, self.distances = self._downsample()
 
     # -------------------------------------------------------------------------
 
@@ -508,6 +498,16 @@ class TimeSeries(SampleGenerator):
         strains = dict()
         strains['H1'] = self.strains['H1'][pad_length:-pad_length]
         strains['L1'] = self.strains['L1'][pad_length:-pad_length]
+
+        # Unpad the signals
+        signals = dict()
+        signals['H1'] = self.signals['H1'][pad_length:-pad_length]
+        signals['L1'] = self.signals['L1'][pad_length:-pad_length]
+
+        # Unpad the noises
+        noises = dict()
+        noises['H1'] = self.noises['H1'][pad_length:-pad_length]
+        noises['L1'] = self.noises['L1'][pad_length:-pad_length]
 
         # Unpad the labels
         labels = dict()
@@ -524,7 +524,7 @@ class TimeSeries(SampleGenerator):
         distances['H1'] = self.distances['H1'][pad_length:-pad_length]
         distances['L1'] = self.distances['L1'][pad_length:-pad_length]
 
-        return strains, labels, chirpmasses, distances
+        return strains, signals, noises, labels, chirpmasses, distances
 
     # -------------------------------------------------------------------------
 
@@ -545,12 +545,16 @@ class TimeSeries(SampleGenerator):
                    'L1': self.strains['L1'][::2]}
         labels = {'H1': self.labels['H1'][::2],
                   'L1': self.labels['L1'][::2]}
+        signals = {'H1': self.signals['H1'][::2],
+                   'L1': self.signals['L1'][::2]}
+        noises = {'H1': self.noises['H1'][::2],
+                  'L1': self.noises['L1'][::2]}
         chirpmasses = {'H1': self.chirpmasses['H1'][::2],
                        'L1': self.chirpmasses['L1'][::2]}
         distances = {'H1': self.distances['H1'][::2],
                      'L1': self.distances['L1'][::2]}
 
-        return strains, labels, chirpmasses, distances
+        return strains, signals, noises, labels, chirpmasses, distances
 
     # -------------------------------------------------------------------------
 
