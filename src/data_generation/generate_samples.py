@@ -109,7 +109,7 @@ if __name__ == '__main__':
         # Create a spectrogram or a time series
         sample = MakeSample(sample_length=arguments['sample_length'],
                             sampling_rate=arguments['sampling_rate'],
-                            n_injections=arguments['n_injections'],
+                            max_n_injections=arguments['max_n_injections'],
                             loudness=arguments['loudness'],
                             noise_type=arguments['noise_type'],
                             pad=arguments['pad'],
