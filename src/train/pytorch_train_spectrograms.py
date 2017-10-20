@@ -8,6 +8,7 @@ import os
 import sys
 import time
 import datetime
+import warnings
 
 from tensorboard import SummaryWriter
 
@@ -20,6 +21,7 @@ from torch.utils.data import TensorDataset, DataLoader
 from torch.optim import lr_scheduler
 
 from models import SpectrogramFCN
+from IPython import embed
 
 
 # -----------------------------------------------------------------------------
@@ -155,6 +157,7 @@ def load_data_as_tensor_datasets(file_path, split_ratios=(0.7, 0.2, 0.1),
     # Swap axes around to get to NCHW format
     x = np.swapaxes(x, 1, 3)
     x = np.swapaxes(x, 2, 3)
+    x = np.squeeze(x)
 
     # Generate the indices for training, test and validation
     idx = np.arange(len(x))
@@ -197,6 +200,9 @@ def load_data_as_tensor_datasets(file_path, split_ratios=(0.7, 0.2, 0.1),
 
 if __name__ == "__main__":
 
+    warnings.warn('This script is not up to date! Do not trust anything that '
+                  'comes out of here! Just stick to TimeSeries for now :)')
+
     print('Starting main routine...')
 
     #
@@ -206,13 +212,13 @@ if __name__ == "__main__":
 
     # Which distances and sample size are we using?
     distances = '0100_0300'
-    sample_size = '8k'
+    sample_size = '256'
 
     # Where does our data live and which file should we use?
     data_path = '../data/'
-    file_name = 'training_{}_{}.h5'.format(distances, sample_size)
+    file_name = 'samples_spectrograms_{}_{}.h5'.format(distances, sample_size)
 
-    file_path = os.path.join(data_path, 'training', file_name)
+    file_path = os.path.join(data_path, 'training', 'spectrograms', file_name)
 
     #
     # -------------------------------------------------------------------------
@@ -227,16 +233,6 @@ if __name__ == "__main__":
 
     print('Done!')
 
-    #
-    # -------------------------------------------------------------------------
-    # SET UP A LOGGER FOR TENSORBOARD VISUALIZATION
-    # -------------------------------------------------------------------------
-
-    run_start = datetime.datetime.now()
-    run_start_formatted = '{:%Y-%m-%d_%H:%M:%S}'.format(run_start)
-    writer = SummaryWriter(log_dir='logs/{}'.format(run_start_formatted))
-
-    #
     # -------------------------------------------------------------------------
     # SET UP THE NET
     # -------------------------------------------------------------------------
@@ -248,11 +244,12 @@ if __name__ == "__main__":
 
     # If desired, load weights from pre-trained model
     # TODO: Make this accessible through command line options!
-    # weights_file = './weights/pytorch_model_weights_0100_0300_4k.net'
+    # weights_file = './weights/spectrogram_weights_0100_0300_4k.net'
     # net.load_state_dict(torch.load(weights_file))
 
     # Set up the optimizer and the initial learning rate, and zero parameters
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)
+    initial_lr = 0.0001
+    optimizer = optim.Adam(model.parameters(), lr=initial_lr)
     optimizer.zero_grad()
 
     # Set up the learning schedule to reduce the LR on plateaus
@@ -267,9 +264,22 @@ if __name__ == "__main__":
     n_minibatches_validation = np.ceil(len(data_validation) / batch_size)
 
     # Fix the number of epochs to train for
-    n_epochs = 30
+    n_epochs = 10
 
-    #
+    threshold = 0.01 * 10 ** (-21)
+
+    # -------------------------------------------------------------------------
+    # SET UP A LOGGER FOR TENSORBOARD VISUALIZATION
+    # -------------------------------------------------------------------------
+
+    run_start = datetime.datetime.now()
+    log_name = [run_start, distances, sample_size, initial_lr, threshold]
+    log_name_formatted = '[{:%Y-%m-%d_%H:%M}]-[{}]-[{}]-[lr_{:.1e}]-'\
+                         '[thresh_{:.2e}]'.format(*log_name)
+    writer = SummaryWriter(log_dir='logs/{}'.format(log_name_formatted))
+    writer.add_text(tag='Description',
+                    text_string='(Description missing.)')
+
     # -------------------------------------------------------------------------
     # TRAIN THE NET FOR THE GIVEN NUMBER OF EPOCHS
     # -------------------------------------------------------------------------
@@ -310,13 +320,14 @@ if __name__ == "__main__":
             outputs = outputs.view((outputs.size()[0], outputs.size()[-1]))
 
             # Calculate weights and set up the loss function
-            weights = torch.from_numpy(np.array([create_weights(_) for _ in
-                                                 labels.data.cpu().numpy()]))
+            weights = torch.eq(torch.gt(labels, 0) *
+                               torch.lt(labels, threshold), 0).float().cuda()
+
             loss_function = nn.BCELoss(weight=weights.float().cuda(),
                                        size_average=True).cuda()
 
             # Calculate the loss
-            loss = loss_function(outputs, labels)
+            loss = loss_function(outputs.cuda(), torch.ceil(labels).cuda())
             running_loss += float(loss.data.cpu().numpy())
 
             # Use back-propagation to update the weights according to the loss
@@ -324,8 +335,8 @@ if __name__ == "__main__":
             optimizer.step()
 
             # Calculate the hamming distance between prediction and truth
-            weighted_pred = (weights.float() * outputs.data.cpu()).numpy()
-            weighted_true = (weights.float() * labels.data.cpu()).numpy()
+            weighted_pred = (weights.float() * outputs).data.cpu().numpy()
+            weighted_true = (weights.float() * labels).data.cpu().numpy()
             running_hamm += hamming_dist(np.round(weighted_pred),
                                          weighted_true)
 
@@ -348,10 +359,10 @@ if __name__ == "__main__":
         # Process validation data in mini-batches
         for mb_idx, mb_data in enumerate(DataLoader(data_validation,
                                                     batch_size=batch_size)):
-
             # Calculate the loss for a particular mini-batch
             inputs, labels = mb_data
-            inputs, labels = Variable(inputs).cuda(), Variable(labels).cuda()
+            inputs = Variable(inputs, volatile=True).cuda()
+            labels = Variable(labels, volatile=True).cuda()
 
             # Forward pass through the net and reshape outputs properly
             outputs = model.forward(inputs)
@@ -361,18 +372,19 @@ if __name__ == "__main__":
             mb_size = len(labels)
 
             # Calculate weights and set up the loss function
-            weights = torch.from_numpy(np.array([create_weights(_) for _ in
-                                                 labels.data.cpu().numpy()]))
+            weights = torch.eq(torch.gt(labels, 0) *
+                               torch.lt(labels, threshold), 0).float().cuda()
+
             loss_function = nn.BCELoss(weight=weights.float().cuda(),
                                        size_average=True).cuda()
 
             # Calculate the loss
-            loss = loss_function(outputs, labels)
+            loss = loss_function(outputs.cuda(), torch.ceil(labels).cuda())
             val_loss += float(loss.data.cpu().numpy())
 
             # Calculate the hamming distance between prediction and truth
-            weighted_pred = (weights.float() * outputs.data.cpu()).numpy()
-            weighted_true = (weights.float() * labels.data.cpu()).numpy()
+            weighted_pred = (weights.float() * outputs).data.cpu().numpy()
+            weighted_true = (weights.float() * labels).data.cpu().numpy()
             val_hamm += hamming_dist(np.round(weighted_pred), weighted_true)
 
         #
@@ -414,7 +426,7 @@ if __name__ == "__main__":
         if epoch % 1 == 0:
 
             # Check if the appropriate directory for this run exists
-            snapshot_dir = os.path.join('./weights/', run_start_formatted)
+            snapshot_dir = os.path.join('./weights/', log_name_formatted)
             if not os.path.exists(snapshot_dir):
                 os.makedirs(snapshot_dir)
 
@@ -440,7 +452,7 @@ if __name__ == "__main__":
 
     # Save the trained model
     print('Saving model...', end=' ')
-    weights_file = ('./weights/pytorch_model_weights_{}_{}.net'.
+    weights_file = ('./weights/spectrograms_weights_{}_{}.net'.
                     format(distances, sample_size))
     torch.save(model.state_dict(), weights_file)
     print('Done!')
@@ -457,7 +469,7 @@ if __name__ == "__main__":
     y_test = data_test.target_tensor.cpu().numpy()
 
     # Initialize an empty array for our predictions
-    y_pred = np.empty((0, data_test.target_tensor.size()[1]))
+    y_pred = []
 
     # Loop over the test set (in mini-batches) to get the predictions
     for mb_idx, mb_data in enumerate(DataLoader(data_test,
@@ -465,7 +477,8 @@ if __name__ == "__main__":
 
         # Calculate the loss for a particular mini-batch
         inputs, labels = mb_data
-        inputs, labels = Variable(inputs).cuda(), Variable(labels).cuda()
+        inputs = Variable(inputs, volatile=True).cuda()
+        labels = Variable(labels, volatile=True).cuda()
 
         # Make predictions for the given mini-batch
         outputs = model.forward(inputs)
@@ -473,12 +486,14 @@ if __name__ == "__main__":
         outputs = outputs.data.cpu().numpy()
 
         # Stack that onto the previous predictions
-        y_pred = np.concatenate((y_pred, outputs), axis=0)
+        y_pred.append(outputs)
+
+    y_pred = np.vstack(y_pred)
 
     # Set up the name and directory of the file where the predictions will
     # be saved.
-    test_predictions_file = 'predictions_{}_{}.h5'.format(distances,
-                                                          sample_size)
+    test_predictions_file = 'predictions_spectrograms_{}_{}.h5'.\
+        format(distances, sample_size)
     test_predictions_path = os.path.join(data_path, 'predictions',
                                          test_predictions_file)
 
