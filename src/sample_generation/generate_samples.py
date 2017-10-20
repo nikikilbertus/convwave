@@ -46,8 +46,8 @@ if __name__ == '__main__':
     print('Reading in real strain data for PSD computation...', end=' ')
 
     # Names of the files containing the real strains, i.e. detector recordings
-    real_strain_file = {'H1': '{}_H1_STRAIN_4096.hdf5'.format(strain_file),
-                        'L1': '{}_L1_STRAIN_4096.hdf5'.format(strain_file)}
+    real_strain_file = {'H1': '{}_H1_STRAIN_4096.h5'.format(strain_file),
+                        'L1': '{}_L1_STRAIN_4096.h5'.format(strain_file)}
 
     # Read the HDF files into numpy arrays and store them in a dict
     real_strains = dict()
@@ -57,7 +57,7 @@ if __name__ == '__main__':
         strain_path = os.path.join(data_path, 'strain', real_strain_file[ifo])
 
         # Read the HDF file into a numpy array
-        with h5py.File(strain_path) as file:
+        with h5py.File(strain_path, 'r') as file:
             real_strains[ifo] = np.array(file['strain/Strain'])
 
     print('Done!')
