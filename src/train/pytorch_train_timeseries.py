@@ -5,191 +5,24 @@
 import numpy as np
 import h5py
 import os
-import sys
 import time
 import datetime
-
-from tensorboard import SummaryWriter
+import pprint
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 
+from tensorboard import SummaryWriter
 from torch.autograd import Variable
-from torch.utils.data import TensorDataset, DataLoader
+from torch.utils.data import DataLoader
 from torch.optim import lr_scheduler
 
 from models import TimeSeriesFCN
+from tools import load_data_as_tensor_datasets, progress_bar, hamming_dist, \
+    apply_model, get_current_lr, get_weights, TrainingArgumentParser
 
-
-# -----------------------------------------------------------------------------
-# FUNCTION DEFINITIONS
-# -----------------------------------------------------------------------------
-
-def create_weights(label, start_size=1000, end_size=200):
-    """
-    Create the weights ('grayzones') for a given label.
-
-    Args:
-        label: A vector labeling the pixels that contain an injection
-        start_size: Number of pixels to ignore at the start of an injection
-        end_size: Number of pixels to ignore at the end of an injections
-
-    Returns: A vector that is 0 for the pixels that should be ignored and 1
-        for all other pixels.
-    """
-
-    a = np.logical_xor(label, np.roll(label, 1))
-    b = np.cumsum(a) % 2
-
-    if start_size == 0:
-        c = np.zeros(label.shape)
-    else:
-        c = np.convolve(a * b, np.hstack((np.zeros(start_size - 1),
-                                          np.ones(start_size))),
-                        mode="same")
-
-    if end_size == 0:
-        d = np.zeros(label.shape)
-    else:
-        d = np.convolve(a * np.logical_not(b),
-                        np.hstack((np.ones(end_size), np.zeros(end_size - 1))),
-                        mode="same")
-
-    return np.logical_not(np.logical_or(c, d)).astype('int')
-
-
-def hamming_dist(y_true, y_pred):
-    """
-    Calculate the Hamming distance between a given predicted label and the
-    true label.
-
-    Args:
-        y_true: The true label
-        y_pred: The predicted label
-
-    Returns: The Hamming distance between the two vectors
-    """
-
-    return np.mean(np.abs(y_true - y_pred), axis=(1, 0))
-
-
-def progress_bar(current_value, max_value, start_time, **kwargs):
-    """
-    Print the progress bar during training that contains all relevant
-    information, i.e. number of epochs, percentage of processed mini-batches,
-    elapsed time, estimated time remaining, as well as all metrics provided.
-
-    Args:
-        current_value: Current number of processed mini-batches
-        max_value: Number of total mini-batches
-        start_time: Absolute timestamp of the moment the epoch began
-        **kwargs: Various metrics, e.g. the loss or Hamming distance
-    """
-
-    # Some preliminary definitions
-    bar_length = 20
-    elapsed_time = time.time() - start_time
-
-    # Construct the actual progress bar
-    percent = float(current_value) / max_value
-    bar = '=' * int(round(percent * bar_length))
-    spaces = '-' * (bar_length - len(bar))
-
-    # Calculate the estimated time remaining
-    eta = elapsed_time / percent - elapsed_time
-
-    # Start with the default info: Progress Bar, number of processed
-    # mini-batches, time elapsed, and estimated time remaining (the '\r' at
-    # the start moves the carriage back the start of the line, meaning that
-    # the progress bar will be overwritten / updated!)
-    out = ("\r[{0}] {1:>3}% ({2:>2}/{3}) | {4:.1f}s elapsed | "
-           "ETA: {5:.1f}s | ".format(bar + spaces, int(round(percent * 100)),
-                                     int(current_value), int(max_value),
-                                     elapsed_time, eta))
-
-    # Add all provided metrics, e.g. loss and Hamming distance
-    metrics = []
-    for metric, value in sorted(kwargs.items()):
-        if metric != 'lr':
-            metrics.append("{}: {:.3f}".format(metric, value))
-        else:
-            metrics.append("{}: {:.8f}".format(metric, value))
-    out += ' - '.join(metrics) + ' '
-
-    # Actually write the finished progress bar to the command line
-    sys.stdout.write(out)
-    sys.stdout.flush()
-
-
-def load_data_as_tensor_datasets(file_path, split_ratios=(0.7, 0.2, 0.1),
-                                 shuffle_data=False, random_seed=42):
-    """
-    Take an HDF file with data (Gaussian Noise with waveform injections) and
-    read it in, split it into training, test and validation data, and convert
-    it to PyTorch TensorDatasets, which can be used in PyTorch DataLoaders,
-    which are in turn useful for looping over the data in mini-batches.
-
-    Args:
-        file_path: The path to the HDF file containing the samples.
-        split_ratios: The ratio of training:test:validation. This ought to
-            sum up to 1!
-        shuffle_data: Whether or not to shuffle the data before splitting.
-        random_seed: Seed for the random number generator.
-
-    Returns: Spectrograms and their respective labels, combined in a PyTorch
-        TensorDataset, for training, test and validation.
-    """
-
-    # TODO: We might also want to pre-process (normalize) the data?
-
-    # Set the seed for the random number generator
-    np.random.seed(random_seed)
-
-    # Read in the spectrograms from the HDF file
-    with h5py.File(file_path, 'r') as file:
-
-        x = np.array(file['timeseries'])
-        y = np.array(file['labels'])
-
-    # Swap axes around to get to NCHW format
-    x = np.swapaxes(x, 1, 3)
-    x = np.swapaxes(x, 2, 3)
-    x = np.squeeze(x)
-
-    # Generate the indices for training, test and validation
-    idx = np.arange(len(x))
-
-    # Shuffle the indices (data) if requested
-    if shuffle_data:
-        idx = np.random.permutation(idx)
-
-    # Get the indices for training, test and validation
-    splits = np.cumsum(split_ratios)
-    idx_train = idx[:int(splits[0]*len(x))]
-    idx_test = idx[int(splits[0]*len(x)):int(splits[1]*len(x))]
-    idx_validation = idx[int(splits[1]*len(x)):]
-
-    # Select the actual data using these indices
-    x_train, y_train = x[idx_train], y[idx_train]
-    x_test, y_test = x[idx_test], y[idx_test]
-    x_validation, y_validation = x[idx_validation], y[idx_validation]
-
-    # Convert the training and test data to PyTorch / CUDA tensors
-    x_train = torch.from_numpy(x_train).float().cuda()
-    y_train = torch.from_numpy(y_train).float().cuda()
-    x_test = torch.from_numpy(x_test).float().cuda()
-    y_test = torch.from_numpy(y_test).float().cuda()
-    x_validation = torch.from_numpy(x_validation).float().cuda()
-    y_validation = torch.from_numpy(y_validation).float().cuda()
-
-    # Create TensorDatasets for training, test and validation
-    tensor_dataset_train = TensorDataset(x_train, y_train)
-    tensor_dataset_test = TensorDataset(x_test, y_test)
-    tensor_dataset_validation = TensorDataset(x_validation, y_validation)
-
-    # Return the resulting TensorDatasets
-    return tensor_dataset_train, tensor_dataset_test, tensor_dataset_validation
+from IPython import embed
 
 
 # -----------------------------------------------------------------------------
@@ -198,24 +31,59 @@ def load_data_as_tensor_datasets(file_path, split_ratios=(0.7, 0.2, 0.1),
 
 if __name__ == "__main__":
 
-    print('Starting main routine...')
-
-    #
     # -------------------------------------------------------------------------
-    # Preliminaries
+    # PARSE COMMAND LINE ARGUMENTS AND DEFINE GLOBAL PARAMETERS
     # -------------------------------------------------------------------------
 
-    # Which distances and sample size are we using?
-    distances = '0100_0300'
-    sample_size = '4k'
+    # Parse command line arguments
+    parser = TrainingArgumentParser()
+    arguments = parser.parse_args()
 
-    # Where does our data live and which file should we use?
+    # Print arguments that will be used
+    print('Beginning training with following parameters:')
+    pprint.pprint(arguments)
+
+    # Define shortcuts for arguments
+    batch_size = arguments['batch_size']
+    description = arguments['description']
+    distances = arguments['distances']
+    initial_lr = arguments['initial_lr']
+    initial_threshold = arguments['initial_threshold']
+    n_epochs = arguments['n_epochs']
+    noise_source = arguments['noise_source']
+    regularization_parameter = arguments['regularization_parameter']
+    sample_size = arguments['sample_size']
+    weights_file_name = arguments['weights_file_name']
+
+    # -------------------------------------------------------------------------
+    # BUILD PATHS FOR THE FILE WE WILL BE USING
+    # -------------------------------------------------------------------------
+
+    print('Building file paths...', end=' ')
+
+    # Base path of data directory
     data_path = '../data/'
-    file_name = 'samples_timeseries_{}_{}.h5'.format(distances, sample_size)
 
-    file_path = os.path.join(data_path, 'training', 'timeseries', file_name)
+    # Build the path for the file where our training samples come from
+    sample_file_name = 'training_{}_{}_{}.h5'.format(noise_source, distances,
+                                                     sample_size)
+    sample_file_path = os.path.join(data_path, 'training', 'timeseries',
+                                    sample_file_name)
 
-    #
+    # Build the path for the weights file we want to load
+    if weights_file_name is not None:
+        weight_file_path = os.path.join('.', 'weights', weights_file_name)
+    else:
+        weight_file_path = None
+
+    # Build path for the HDF file in which we will store the test predictions
+    pred_file_name = 'predictions_{}_{}_{}.h5'.format(noise_source, distances,
+                                                      sample_size)
+    pred_file_path = os.path.join(data_path, 'predictions', 'timeseries',
+                                  pred_file_name)
+
+    print('Done!')
+
     # -------------------------------------------------------------------------
     # LOAD DATA, SPLIT TRAINING AND TEST SAMPLE, AND CREATE DATALOADERS
     # -------------------------------------------------------------------------
@@ -223,57 +91,110 @@ if __name__ == "__main__":
     print('Reading in data...', end=' ')
 
     # Load the data from the HDF file, split it, and convert to TensorDatasets
-    tensor_datasets = load_data_as_tensor_datasets(file_path)
+    tensor_datasets = load_data_as_tensor_datasets(sample_file_path)
     data_train, data_test, data_validation = tensor_datasets
 
     print('Done!')
 
-    #
     # -------------------------------------------------------------------------
-    # SET UP A LOGGER FOR TENSORBOARD VISUALIZATION
-    # -------------------------------------------------------------------------
-
-    run_start = datetime.datetime.now()
-    run_start_formatted = '{:%Y-%m-%d_%H:%M:%S}'.format(run_start)
-    writer = SummaryWriter(log_dir='logs/{}'.format(run_start_formatted))
-    writer.add_text(tag='Description',
-                    text_string='Some text that describes this run.')
-
-    #
-    # -------------------------------------------------------------------------
-    # SET UP THE NET
+    # INITIALIZE THE MODEL AND LOAD WEIGHTS IF NECESSARY
     # -------------------------------------------------------------------------
 
-    # Set up the net and make it CUDA ready; activate GPU parallelization
-    # model = SpectrogramFCN()
+    # Define the model
     model = TimeSeriesFCN()
-    model.float().cuda()
-    model = torch.nn.DataParallel(model)
+    model = model.float()
 
-    # If desired, load weights from pre-trained model
-    # TODO: Make this accessible through command line options!
-    # weights_file = './weights/pytorch_model_weights_0100_0300_4k.net'
-    # net.load_state_dict(torch.load(weights_file))
+    # If CUDA is available, use it and activate GPU parallelization
+    if torch.cuda.is_available():
+        model.float().cuda()
+        model = torch.nn.DataParallel(model)
 
-    # Set up the optimizer and the initial learning rate, and zero parameters
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    # If desired, load weights file to warm-start the training
+    if weight_file_path is not None:
+        print('Loading weights for warm start...', end=' ')
+        model.load_state_dict(torch.load(weight_file_path))
+        print('Done!')
+
+    # -------------------------------------------------------------------------
+    # SET UP THE OPTIMIZER USED FOR TRAINING THE NET
+    # -------------------------------------------------------------------------
+
+    # Don't give parameters to the optimizer that don't need a gradient
+    params_for_opt = filter(lambda p: p.requires_grad, model.parameters())
+
+    # Set up the optimizer and make sure all gradients are zero
+    optimizer = optim.Adam(params_for_opt, lr=initial_lr)
     optimizer.zero_grad()
 
-    # Set up the learning schedule to reduce the LR on plateaus
-    scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
-                                               factor=0.5, patience=5,
-                                               threshold=0.01, )
+    # -------------------------------------------------------------------------
+    # SET UP THE SCHEDULER THAT REDUCES THE LEARNING RATE ON PLATEAUS
+    # -------------------------------------------------------------------------
 
-    # Set the mini-batch size, and calculate the number of mini-batches
-    batch_size = 16
+    scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
+                                               factor=0.794, patience=3,
+                                               threshold=0.01)
+
+    # -------------------------------------------------------------------------
+    # DEFINE THE LOSS FUNCTION THAT WE WILL BE OPTIMIZING FOR
+    # -------------------------------------------------------------------------
+
+    def loss_function(y_pred, y_true, weights, reg=regularization_parameter):
+        """
+        Calculate the loss as the weighted sum of a Binary Cross-Entropy
+        term and a Total Variation penalty term.
+
+        Args:
+            y_pred: The tensor of predictions
+            y_true: The tensor of true labels
+            weights: The weights that encode the fuzzy zones
+            reg: The regularization parameter
+
+        Returns:
+            loss: The loss value for y_pred and y_true
+        """
+
+        # Set up the Binary Cross-Entropy term of the loss
+        bce_loss = nn.BCELoss(weight=weights)
+        if torch.cuda.is_available():
+            bce_loss = bce_loss.cuda()
+
+        # Set up the Total Variation term of the loss
+        tv_loss = torch.sum(torch.abs(y_pred[:, :-1] - y_pred[:, 1:]))
+
+        # Return the weighted sum of BCE loss and TV loss
+        return bce_loss(y_pred, y_true) + reg * tv_loss
+
+    # -------------------------------------------------------------------------
+    # SET UP REMAINING PARAMETERS
+    # -------------------------------------------------------------------------
+
+    # Initialize the threshold used for determining the fuzzy zones
+    threshold = initial_threshold
+
+    # Calculate the number of mini-batches
     n_minibatches_train = np.ceil(len(data_train) / batch_size)
     n_minibatches_test = np.ceil(len(data_test) / batch_size)
     n_minibatches_validation = np.ceil(len(data_validation) / batch_size)
 
-    # Fix the number of epochs to train for
-    n_epochs = 40
+    # Keep track of all the metrics we want to log
+    metrics = {'loss': [], 'hamming': [], 'val_loss': [], 'val_hamming': []}
 
-    #
+    # -------------------------------------------------------------------------
+    # SET UP A LOGGER FOR TENSORBOARD VISUALIZATION
+    # -------------------------------------------------------------------------
+
+    # Define a log directory and set up a writer
+    run_start = datetime.datetime.now()
+    log_name = [run_start, distances, sample_size, initial_lr, threshold]
+    log_name_formatted = '[{:%Y-%m-%d_%H:%M}]-[{}]-[{}]-[LR_{:.1e}]-'\
+                         '[THRESH_{:.2e}]'.format(*log_name)
+    writer = SummaryWriter(log_dir='logs/{}'.format(log_name_formatted))
+    writer.add_text(tag='Description', text_string=description)
+
+    # Define a shortcut to write metrics to the log
+    def log_metric(name, value, epoch):
+        writer.add_scalar(name, value, epoch)
+
     # -------------------------------------------------------------------------
     # TRAIN THE NET FOR THE GIVEN NUMBER OF EPOCHS
     # -------------------------------------------------------------------------
@@ -282,176 +203,187 @@ if __name__ == "__main__":
           'examples\n'.format(len(data_train), len(data_validation)))
 
     # -------------------------------------------------------------------------
+    #
 
     for epoch in range(n_epochs):
 
+        # Print the current epoch of the training
         print('Epoch {}/{}'.format(epoch+1, n_epochs))
 
-        running_loss = 0
-        running_hamm = 0
+        # Keep logging the losses and hamming distances of all mini-batches
+        epoch_losses = []
+        epoch_hammings = []
+
+        # Start the stopwatch for this epoch to get an ETA
         start_time = time.time()
 
-        #
         # ---------------------------------------------------------------------
         # LOOP OVER MINI-BATCHES AND TRAIN THE NETWORK
         # ---------------------------------------------------------------------
 
-        for mb_idx, mb_data in enumerate(DataLoader(data_train,
-                                                    batch_size=batch_size)):
+        # Reset data loader for this epoch to shuffle training data
+        data_loader_train = DataLoader(data_train,
+                                       batch_size=batch_size,
+                                       shuffle=True)
+
+        # Loop in mini-batches over the training data
+        for mb_idx, mb_data in enumerate(data_loader_train):
 
             # Get the inputs and wrap them in a PyTorch variable
             inputs, labels = mb_data
-            inputs, labels = Variable(inputs).cuda(), Variable(labels).cuda()
+            inputs, labels = Variable(inputs), Variable(labels)
 
-            # Get the size of the mini-batch
-            mb_size = len(labels)
+            # If CUDA is available, run everything on the GPU
+            if torch.cuda.is_available():
+                inputs, labels = inputs.cuda(), labels.cuda()
 
-            # Zero the parameter gradients
-            optimizer.zero_grad()
-
-            # Forward pass through the net and reshape outputs properly
+            # Run a forward pass through the net and reshape outputs properly
             outputs = model.forward(inputs)
             outputs = outputs.view((outputs.size()[0], outputs.size()[-1]))
 
-            # Calculate weights and set up the loss function
-            weights = torch.from_numpy(np.array([create_weights(_) for _ in
-                                                 labels.data.cpu().numpy()]))
-            loss_function = nn.BCELoss(weight=weights.float().cuda(),
-                                       size_average=True).cuda()
+            # Calculate weights (i.e., fuzzy zones) from labels
+            weights = get_weights(labels, threshold)
 
-            # Calculate the loss
-            loss = loss_function(outputs, labels)
-            running_loss += float(loss.data.cpu().numpy())
+            # Calculate the loss using the weighted labels and predictions
+            # and keep track of it for logging purposes
+            loss = loss_function(y_pred=outputs,
+                                 y_true=torch.ceil(labels),
+                                 weights=weights)
+            mb_loss = float(loss.data.cpu().numpy())
+            epoch_losses.append(mb_loss)
 
-            # Use back-propagation to update the weights according to the loss
+            # Calculate the Hamming distance for this mini-batch
+            mb_hamming = hamming_dist(y_pred=(outputs * weights),
+                                      y_true=torch.ceil(labels * weights))
+            epoch_hammings.append(mb_hamming)
+
+            # Zero the gradients, then back-propagate the loss and update the
+            # weights of the model
+            optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-
-            # Calculate the hamming distance between prediction and truth
-            weighted_pred = (weights.float() * outputs.data.cpu()).numpy()
-            weighted_true = (weights.float() * labels.data.cpu()).numpy()
-            running_hamm += hamming_dist(np.round(weighted_pred),
-                                         weighted_true)
 
             # Make output to the command line
             progress_bar(current_value=mb_idx+1,
                          max_value=n_minibatches_train,
                          start_time=start_time,
-                         loss=running_loss/(mb_idx+1),
-                         hamming_dist=running_hamm/(mb_idx+1))
+                         loss=np.mean(epoch_losses),
+                         hamming=np.mean(epoch_hammings))
 
-        #
         # ---------------------------------------------------------------------
-        # LOOP OVER MINI-BATCHES AND EVALUATE ON VALIDATION SAMPLE
-        # ---------------------------------------------------------------------
-
-        # At the end of an epoch, calculate the validation loss
-        val_loss = 0
-        val_hamm = 0
-
-        # Process validation data in mini-batches
-        for mb_idx, mb_data in enumerate(DataLoader(data_validation,
-                                                    batch_size=batch_size)):
-
-            # Calculate the loss for a particular mini-batch
-            inputs, labels = mb_data
-            inputs, labels = Variable(inputs).cuda(), Variable(labels).cuda()
-
-            # Forward pass through the net and reshape outputs properly
-            outputs = model.forward(inputs)
-            outputs = outputs.view((outputs.size()[0], outputs.size()[-1]))
-
-            # Get the size of the mini-batch
-            mb_size = len(labels)
-
-            # Calculate weights and set up the loss function
-            weights = torch.from_numpy(np.array([create_weights(_) for _ in
-                                                 labels.data.cpu().numpy()]))
-            loss_function = nn.BCELoss(weight=weights.float().cuda(),
-                                       size_average=True).cuda()
-
-            # Calculate the loss
-            loss = loss_function(outputs, labels)
-            val_loss += float(loss.data.cpu().numpy())
-
-            # Calculate the hamming distance between prediction and truth
-            weighted_pred = (weights.float() * outputs.data.cpu()).numpy()
-            weighted_true = (weights.float() * labels.data.cpu()).numpy()
-            val_hamm += hamming_dist(np.round(weighted_pred), weighted_true)
-
-        #
-        # ---------------------------------------------------------------------
-        # PRINT FINAL PROGRESS BAR AND LOG STUFF FOR TENSORBOARD VISUALIZATION
+        # EVALUATE LOSS AND HAMMING DISTANCE ON VALIDATION SAMPLE
         # ---------------------------------------------------------------------
 
-        # Get the current learning rate... TODO: is this really the only way?!
-        lr = None
-        for param_group in optimizer.param_groups:
-            lr = param_group['lr']
+        # Set up the data load for the validation data
+        data_loader_validation = DataLoader(data_validation,
+                                            batch_size=batch_size)
+
+        # Apply the net to the validation data and get the outputs
+        outputs = apply_model(model, data_loader_validation)
+
+        # Get the true labels for the validation data and calculate weights
+        labels = Variable(data_validation.target_tensor, volatile=True)
+        weights = get_weights(labels, threshold)
+
+        # Calculate the validation loss
+        val_loss = loss_function(y_pred=outputs,
+                                 y_true=torch.ceil(labels),
+                                 weights=weights)
+        val_loss = float(val_loss.data.cpu().numpy())
+
+        # Calculate the validation Hamming distance
+        val_hamming = hamming_dist(y_pred=outputs*weights,
+                                   y_true=torch.ceil(labels*weights))
+
+        # ---------------------------------------------------------------------
+        # STORE ALL METRICS FOR THIS EPOCH
+        # ---------------------------------------------------------------------
+
+        metrics['loss'].append(np.mean(epoch_losses))
+        metrics['hamming'].append(np.mean(epoch_hammings))
+        metrics['val_loss'].append(val_loss)
+        metrics['val_hamming'].append(val_hamming)
+
+        # ---------------------------------------------------------------------
+        # PRINT FINAL PROGRESS BAR FOR EPOCH
+        # ---------------------------------------------------------------------
+
+        # Get the current learning rate from the optimizer
+        lr = get_current_lr(optimizer)
 
         # Plot the final progress bar for this epoch
         progress_bar(current_value=n_minibatches_train,
                      max_value=n_minibatches_train,
                      start_time=start_time,
-                     loss=running_loss/n_minibatches_train,
-                     hamming_dist=running_hamm/n_minibatches_train,
-                     val_loss=val_loss/n_minibatches_validation,
-                     val_hamming_dist=val_hamm/n_minibatches_validation,
-                     lr=lr)
-        print()
+                     loss=metrics['loss'][epoch],
+                     hamming=metrics['hamming'][epoch],
+                     val_loss=metrics['val_loss'][epoch],
+                     val_hamming=metrics['val_hamming'][epoch],
+                     lr=lr,
+                     thresh='{:.2e}'.format(threshold),
+                     end='\n')
 
-        # Save everything to the TensorBoard logger
-        def log(name, value):
-            writer.add_scalar(name, value, epoch)
-
-        log('loss', running_loss/n_minibatches_train)
-        log('hamming_dist', running_hamm/n_minibatches_train)
-        log('val_loss', val_loss/n_minibatches_validation)
-        log('val_hamming_dist', val_hamm/n_minibatches_validation)
-        log('learning_rate', lr)
-
-        #
         # ---------------------------------------------------------------------
-        # SAVE SNAPSHOTS OF THE MODEL'S WEIGHTS (EVERY N EPOCHS)
+        # LOG EPOCH METRICS TO THE TENSORBOARD LOGGER
         # ---------------------------------------------------------------------
 
-        if epoch % 1 == 0:
+        log_metric('loss', np.mean(epoch_losses), epoch)
+        log_metric('hamming_dist', np.mean(epoch_hammings), epoch)
+        log_metric('val_loss', val_loss, epoch)
+        log_metric('val_hamming_dist', val_hamming, epoch)
+        log_metric('learning_rate', lr, epoch)
+        log_metric('threshold', threshold * 10**21, epoch)
+
+        # ---------------------------------------------------------------------
+        # SAVE SNAPSHOTS OF THE MODEL'S WEIGHTS (EVERY OTHER EPOCH)
+        # ---------------------------------------------------------------------
+
+        if epoch % 2 == 0:
 
             # Check if the appropriate directory for this run exists
-            snapshot_dir = os.path.join('./weights/', run_start_formatted)
+            snapshot_dir = os.path.join('./weights/', log_name_formatted)
             if not os.path.exists(snapshot_dir):
                 os.makedirs(snapshot_dir)
 
             # Save the weights for the current epoch ("snapshot")
-            dummy = [distances, sample_size, epoch]
-            weights_file_name = 'weights_{}_{}_epoch-{:03d}.net'.format(*dummy)
+            __ = [noise_source, distances, sample_size, epoch]
+            weights_file_name = 'weights_{}_{}_{}_epoch-{:03d}.net'.format(*__)
             weights_file_path = os.path.join(snapshot_dir, weights_file_name)
             torch.save(model.state_dict(), weights_file_path)
 
-            # TODO: Maybe delete the older snapshots?
-
-        #
         # ---------------------------------------------------------------------
-        # REDUCE THE LEARNING RATE IF APPROPRIATE
+        # REDUCE THE LEARNING RATE AND FUZZY ZONE THRESHOLD IF APPROPRIATE
         # ---------------------------------------------------------------------
 
-        scheduler.step(val_loss/n_minibatches_validation)
+        # Reduce Learning Rate if on Plateau
+        scheduler.step(val_loss)
 
+        # Get the minimum validation loss and Hamming distance
+        min_val_loss = np.min(metrics['val_loss'])
+        min_val_hamming = np.min(metrics['val_hamming'])
+
+        # Reduce the threshold if appropriate
+        if epoch % 3 == 1:
+            threshold = 0.9 * threshold
+
+    #
     # -------------------------------------------------------------------------
 
     print('Finished Training!')
     writer.close()
 
-    # Save the trained model
+    # -------------------------------------------------------------------------
+    # AFTER TRAINING IS FINISHED, SAVE THE TRAINED MODEL
+    # -------------------------------------------------------------------------
+
     print('Saving model...', end=' ')
-    weights_file = ('./weights/pytorch_model_weights_{}_{}.net'.
-                    format(distances, sample_size))
+    weights_file = ('./weights/timeseries_weights_{}_{}_{}.net'.
+                    format(noise_source, distances, sample_size))
     torch.save(model.state_dict(), weights_file)
     print('Done!')
 
-    #
     # -------------------------------------------------------------------------
-    # MAKE PREDICTIONS ON THE TEST SET
+    # FINALLY, MAKE PREDICTIONS ON THE TEST SET AND SAVE THEM
     # -------------------------------------------------------------------------
 
     print('Start making predictions on the test sample...', end=' ')
@@ -460,36 +392,17 @@ if __name__ == "__main__":
     x_test = data_test.data_tensor.cpu().numpy()
     y_test = data_test.target_tensor.cpu().numpy()
 
-    # Initialize an empty array for our predictions
-    y_pred = np.empty((0, data_test.target_tensor.size()[1]))
+    # Set up the data load for the test data
+    data_loader_test = DataLoader(data_test, batch_size=batch_size)
 
-    # Loop over the test set (in mini-batches) to get the predictions
-    for mb_idx, mb_data in enumerate(DataLoader(data_test,
-                                                batch_size=batch_size)):
+    # Apply the net to the validation data and get the outputs
+    outputs = apply_model(model, data_loader_test, as_numpy=True)
 
-        # Calculate the loss for a particular mini-batch
-        inputs, labels = mb_data
-        inputs, labels = Variable(inputs).cuda(), Variable(labels).cuda()
-
-        # Make predictions for the given mini-batch
-        outputs = model.forward(inputs)
-        outputs = outputs.view((outputs.size()[0], outputs.size()[-1]))
-        outputs = outputs.data.cpu().numpy()
-
-        # Stack that onto the previous predictions
-        y_pred = np.concatenate((y_pred, outputs), axis=0)
-
-    # Set up the name and directory of the file where the predictions will
-    # be saved.
-    test_predictions_file = 'predictions_{}_{}.h5'.format(distances,
-                                                          sample_size)
-    test_predictions_path = os.path.join(data_path, 'predictions',
-                                         test_predictions_file)
-
-    with h5py.File(test_predictions_path, 'w') as file:
+    # Save the predictions of the model on the test set
+    with h5py.File(pred_file_path, 'w') as file:
 
         file['x'] = x_test
-        file['y_pred'] = y_pred
+        file['y_pred'] = outputs
         file['y_true'] = y_test
 
-    print('Done!')
+    print('All Done!')
