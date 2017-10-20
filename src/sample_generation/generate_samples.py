@@ -12,8 +12,6 @@ import h5py
 from samplegenerators import CustomArgumentParser, Spectrogram, TimeSeries
 from tools import get_psd, get_waveforms_as_dataframe, progress_bar
 
-from IPython import embed
-
 
 # -----------------------------------------------------------------------------
 # MAIN CODE
@@ -28,11 +26,8 @@ if __name__ == '__main__':
     # Set the seed for the random number generator
     np.random.seed(42)
 
-    # Start the stopwatch
-    start_time = time.time()
-    print('Starting sample generation using the following parameters:')
-
     # Read in command line options
+    print('Starting sample generation using the following parameters:')
     parser = CustomArgumentParser()
     arguments = parser.parse_args()
     pprint.pprint(arguments)
@@ -41,6 +36,8 @@ if __name__ == '__main__':
     data_path = arguments['data_path']
     waveforms_file = arguments['waveforms_file']
     sample_type = arguments['sample_type']
+    strain_file = arguments['strain_file']
+    use_type = arguments['use_type']
 
     # -------------------------------------------------------------------------
     # Read in the real strain data from the LIGO website
@@ -49,7 +46,8 @@ if __name__ == '__main__':
     print('Reading in real strain data for PSD computation...', end=' ')
 
     # Names of the files containing the real strains, i.e. detector recordings
-    real_strain_file = {'H1': 'H1_2017_4096.hdf5', 'L1': 'L1_2017_4096.hdf5'}
+    real_strain_file = {'H1': '{}_H1_STRAIN_4096.hdf5'.format(strain_file),
+                        'L1': '{}_L1_STRAIN_4096.hdf5'.format(strain_file)}
 
     # Read the HDF files into numpy arrays and store them in a dict
     real_strains = dict()
@@ -58,7 +56,7 @@ if __name__ == '__main__':
         # Make the full path for the strain file
         strain_path = os.path.join(data_path, 'strain', real_strain_file[ifo])
 
-        # Read in the HDF file into a numpy array
+        # Read the HDF file into a numpy array
         with h5py.File(strain_path) as file:
             real_strains[ifo] = np.array(file['strain/Strain'])
 
@@ -75,7 +73,7 @@ if __name__ == '__main__':
     print('Done!')
 
     # -------------------------------------------------------------------------
-    # Load the pre-calculated waveforms from an HDF file
+    # Load the pre-calculated waveforms from an HDF file into a DataFrame
     # -------------------------------------------------------------------------
 
     print('Loading pre-computed waveforms...', end=' ')
@@ -100,8 +98,11 @@ if __name__ == '__main__':
     results['labels'] = []
     results['chirpmasses'] = []
     results['distances'] = []
+    results['snrs'] = []
 
-    print('Generating training samples...')
+    # Start the stopwatch
+    start_time = time.time()
+    print('Generating {} samples...'.format(use_type))
 
     # TODO: Can this loop be parallelized?
     for i in range(arguments['n_samples']):
@@ -123,6 +124,7 @@ if __name__ == '__main__':
         results['labels'].append(sample.get_label())
         results['chirpmasses'].append(sample.get_chirpmass())
         results['distances'].append(sample.get_distance())
+        results['snrs'].append(sample.get_snr())
 
         # Make a sweet progress bar to see how things are going
         progress_bar(current_value=i+1, max_value=arguments['n_samples'],
@@ -134,7 +136,7 @@ if __name__ == '__main__':
 
     print('\nSaving results...', end=' ')
 
-    results_path = os.path.join(data_path, 'training', sample_type,
+    results_path = os.path.join(data_path, use_type, sample_type,
                                 arguments['output_file'])
 
     with h5py.File(results_path, 'w') as file:

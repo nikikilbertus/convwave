@@ -9,6 +9,7 @@ import argparse
 from librosa.feature import melspectrogram
 from librosa import logamplitude
 from scipy.interpolate import interp1d
+import warnings
 
 from tools import apply_psd, get_start_end_idx, get_envelope, resample_vector
 
@@ -68,10 +69,18 @@ class CustomArgumentParser:
                                  help='Type of noise used for injections',
                                  choices=['gaussian', 'real'],
                                  default='real')
+        self.parser.add_argument('--strain-file',
+                                 help='Strain from which event to use',
+                                 choices=['GW150914', 'GW151226', 'GW170104'],
+                                 default='GW150914')
         self.parser.add_argument('--sample-type',
                                  help='Type of sample to create',
                                  choices=['timeseries', 'spectrograms'],
-                                 default='spectrogram')
+                                 default='timeseries')
+        self.parser.add_argument('--use-type',
+                                 help='Use data for training or testing?',
+                                 choices=['training', 'testing'],
+                                 default='training')
 
     # -------------------------------------------------------------------------
 
@@ -112,6 +121,7 @@ class SampleGenerator:
         self.noises = None
         self.positions = None
         self.signals = None
+        self.snrs = None
         self.strains = None
 
         # Randomly choose the number of injections for this sample
@@ -131,10 +141,10 @@ class SampleGenerator:
         self.noises = self._make_noises()
 
         # Create the signals and the label vectors by making some injections
-        # NOTE: In case of the spectrograms, the labels need to be resized to
+        # NOTE: In case of the spectrograms, the labels need to be re-sized to
         # match the length of the spectrogram!
-        self.signals, self.labels, self.chirpmasses, self.distances = \
-            self._make_signals()
+        self.signals, self.labels, self.chirpmasses, self.distances, \
+            self.snrs = self._make_signals()
 
         # Calculate the strains as the sum of the noises and the signals
         self.strains = self._make_strains()
@@ -199,8 +209,15 @@ class SampleGenerator:
                            spacing)) * self.sampling_rate for i in
                           range(self.n_injections)]
 
+        # Empty list to keep track of the SNRs we are calculating
+        snrs = []
+
         # Loop over all injections to be made
         for inj_number in range(self.n_injections):
+
+            # -----------------------------------------------------------------
+            # Select random waveform and pre-process
+            # -----------------------------------------------------------------
 
             # Randomly select a row from the waveforms DataFrame
             waveform_idx = np.random.randint(len(self.waveforms))
@@ -241,6 +258,10 @@ class SampleGenerator:
                 waveform['H1'] = waveform['H1'][100:-50]
                 waveform['L1'] = waveform['L1'][100:-50]
 
+            # -----------------------------------------------------------------
+            # Calculate envelopes and start / end positions for injections
+            # -----------------------------------------------------------------
+
             # Now calculate the envelopes of these waveforms
             waveform_envelope = dict()
             waveform_envelope['H1'] = get_envelope(waveform['H1'])
@@ -261,6 +282,10 @@ class SampleGenerator:
             end_pos['H1'] = int(start_pos['H1'] + waveform_length['H1'])
             end_pos['L1'] = int(start_pos['L1'] + waveform_length['L1'])
 
+            # -----------------------------------------------------------------
+            # Make injections and create label vectors
+            # -----------------------------------------------------------------
+
             # Make the injection, i.e. add the waveform to the signal
             signals['H1'][start_pos['H1']:end_pos['H1']] += waveform['H1']
             signals['L1'][start_pos['L1']:end_pos['L1']] += waveform['L1']
@@ -279,7 +304,28 @@ class SampleGenerator:
             distances['H1'][start_pos['H1']:end_pos['H1']] += distance
             distances['L1'][start_pos['L1']:end_pos['L1']] += distance
 
-        return signals, labels, chirpmasses, distances
+            # -----------------------------------------------------------------
+            # Calculate the SNRs for this injection
+            # -----------------------------------------------------------------
+
+            # Get the power of the noise
+            noise_power = dict()
+            noise_power['H1'] = np.var(self.noises['H1'][start_pos['H1']:
+                                                         end_pos['H1']])
+            noise_power['L1'] = np.var(self.noises['L1'][start_pos['L1']:
+                                                         end_pos['L1']])
+
+            # Get the power of the signal
+            signal_power = dict()
+            signal_power['H1'] = np.var(waveform['H1'])
+            signal_power['L1'] = np.var(waveform['L1'])
+
+            # Calculate the signal-to-noise-ratios
+            snr = {'H1': signal_power['H1'] / noise_power['H1'],
+                   'L1': signal_power['L1'] / noise_power['L1']}
+            snrs.append(snr)
+
+        return signals, labels, chirpmasses, distances, snrs
 
     # -------------------------------------------------------------------------
 
@@ -296,6 +342,13 @@ class SampleGenerator:
             # Apply the Power Spectral Density to whiten
             strains['H1'] = apply_psd(strains['H1'], self.psds['H1'])
             strains['L1'] = apply_psd(strains['L1'], self.psds['L1'])
+
+            self.noises['H1'] = apply_psd(self.noises['H1'], self.psds['H1'])
+            self.noises['L1'] = apply_psd(self.noises['L1'], self.psds['L1'])
+            self.signals['H1'] = apply_psd(self.signals['H1'], self.psds[
+             'H1'])
+            self.signals['L1'] = apply_psd(self.signals['L1'], self.psds[
+             'L1'])
 
         return strains
 
@@ -322,6 +375,12 @@ class SampleGenerator:
     def get_distance(self):
 
         return np.maximum(self.distances['H1'], self.distances['L1'])
+
+    # -------------------------------------------------------------------------
+
+    def get_snr(self):
+
+        return self.snrs
 
     # -------------------------------------------------------------------------
 
@@ -370,8 +429,10 @@ class Spectrogram(SampleGenerator):
 
         # Rescale the labels to the length of the spectrogram using a
         # linear interpolation that is evaluated on a grid
+        """
         labels = {'H1': resample_vector(self.labels['H1'], new_lengths['H1']),
                   'L1': resample_vector(self.labels['L1'], new_lengths['L1'])}
+        """
         chirpmasses = {'H1': resample_vector(self.chirpmasses['H1'],
                                              new_lengths['H1']),
                        'L1': resample_vector(self.chirpmasses['L1'],
@@ -380,6 +441,16 @@ class Spectrogram(SampleGenerator):
                                            new_lengths['H1']),
                      'L1': resample_vector(self.distances['L1'],
                                            new_lengths['L1'])}
+
+        warnings.warn('Labels return by this method are not signal '
+                      'envelopes, but just 0/1 for (no) injection present!')
+
+        # FIXME: Linear interpolation seems to break on label scale (10^-21)
+        # This is a dirty hack to get at least some kind of working labels
+        labels = {'H1': np.fromiter(map(lambda x: x > 0, chirpmasses['H1']),
+                                    dtype=int),
+                  'L1': np.fromiter(map(lambda x: x > 0, chirpmasses['H1']),
+                                    dtype=int)}
 
         return labels, chirpmasses, distances
 
@@ -477,8 +548,6 @@ class TimeSeries(SampleGenerator):
                          max_delta_t=max_delta_t,
                          loudness=loudness,
                          pad=pad)
-
-        print('Generating a TimeSeries...')
 
         # Remove the padding again
         self.strains, self.signals, self.noises, self.labels, \
