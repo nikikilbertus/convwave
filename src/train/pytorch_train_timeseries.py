@@ -186,8 +186,9 @@ if __name__ == "__main__":
 
     # Define a log directory and set up a writer
     run_start = datetime.datetime.now()
-    log_name = [run_start, distances, sample_size, initial_lr, threshold]
-    log_name_formatted = '[{:%Y-%m-%d_%H:%M}]-[{}]-[{}]-[LR_{:.1e}]-'\
+    log_name = [run_start, noise_source, distances, sample_size, initial_lr,
+                threshold]
+    log_name_formatted = '[{:%Y-%m-%d_%H:%M}]-[{}]-[{}]-[{}]-[LR_{:.1e}]-'\
                          '[THRESH_{:.2e}]'.format(*log_name)
     writer = SummaryWriter(log_dir='logs/{}'.format(log_name_formatted))
     writer.add_text(tag='Description', text_string=description)
