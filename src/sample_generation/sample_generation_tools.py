@@ -262,3 +262,19 @@ def resample_vector(vector, new_length):
     grid = np.linspace(0, len(vector)-1, new_length)
 
     return np.round(interpolation(grid))
+
+
+# -----------------------------------------------------------------------------
+
+
+def snr_from_results_list(results_list, ifo, max_n_injections):
+    results = []
+    for entry in results_list:
+        if not entry:
+            results.append(max_n_injections * [np.nan])
+        else:
+            foo = [_[ifo] for _ in entry]
+            while len(foo) < max_n_injections:
+                foo.append(np.nan)
+            results.append(foo)
+    return np.array(results)

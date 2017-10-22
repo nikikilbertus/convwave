@@ -9,8 +9,9 @@ import pprint
 import numpy as np
 import h5py
 
-from samplegenerators import CustomArgumentParser, Spectrogram, TimeSeries
-from tools import get_psd, get_waveforms_as_dataframe, progress_bar
+from sample_generators import CustomArgumentParser, Spectrogram, TimeSeries
+from sample_generation_tools import get_psd, get_waveforms_as_dataframe, \
+    progress_bar, snr_from_results_list
 
 
 # -----------------------------------------------------------------------------
@@ -117,7 +118,7 @@ if __name__ == '__main__':
                             waveforms=waveforms,
                             psds=psds,
                             real_strains=real_strains,
-                            max_delta_t=0.1)
+                            max_delta_t=0.01)
 
         # Store away Spectrogram / TimeSeries and labels
         results[sample_type].append(getattr(sample, method_name)())
@@ -144,6 +145,10 @@ if __name__ == '__main__':
         file['labels'] = np.array(results['labels'])
         file['chirpmasses'] = np.array(results['chirpmasses'])
         file['distances'] = np.array(results['distances'])
+        file['snrs_H1'] = snr_from_results_list(results['snrs'], 'H1',
+                                                arguments['max_n_injections'])
+        file['snrs_L1'] = snr_from_results_list(results['snrs'], 'L1',
+                                                arguments['max_n_injections'])
 
     print('Done!')
     file_size = os.path.getsize(results_path) / 1e6
