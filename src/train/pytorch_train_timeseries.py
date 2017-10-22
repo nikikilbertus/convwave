@@ -19,8 +19,9 @@ from torch.utils.data import DataLoader
 from torch.optim import lr_scheduler
 
 from models import TimeSeriesFCN
-from tools import load_data_as_tensor_datasets, progress_bar, hamming_dist, \
-    apply_model, get_current_lr, get_weights, TrainingArgumentParser
+from training_tools import load_data_as_tensor_datasets, progress_bar, \
+    hamming_dist, apply_model, get_current_lr, get_weights, \
+    TrainingArgumentParser
 
 from IPython import embed
 
