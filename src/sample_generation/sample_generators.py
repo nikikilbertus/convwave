@@ -11,7 +11,8 @@ from librosa import logamplitude
 from scipy.interpolate import interp1d
 import warnings
 
-from tools import apply_psd, get_start_end_idx, get_envelope, resample_vector
+from sample_generation_tools import apply_psd, get_start_end_idx, \
+    get_envelope, resample_vector
 
 
 # -----------------------------------------------------------------------------
