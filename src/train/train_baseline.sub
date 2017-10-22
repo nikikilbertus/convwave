@@ -1,0 +1,80 @@
+executable = /lustre/home/tgebhard/tf-1.0.0_gpu/bin/python3
+
+getenv = True
+
+request_memory = 16384
+request_cpus = 8
+requirements = CUDAGlobalMemoryMb > 8000
+request_gpus = 4
+
+output = cluster_logs/GW150914_0100_0300.out
+error = cluster_logs/GW150914_0100_0300.err
+log = cluster_logs/GW150914_0100_0300.log
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW150914, 0100_0300' --distances=0100_0300 --initial-lr=0.0001 --initial-threshold=0.0 --n-epochs=50 --noise-source=GW150914 --regularization-parameter=0.0002"
+queue
+
+output = cluster_logs/GW150914_0250_0500.out
+error = cluster_logs/GW150914_0250_0500.err
+log = cluster_logs/GW150914_0250_0500.log
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW150914, 0250_0500' --distances=0250_0500 --initial-lr=0.0001 --initial-threshold=0.0 --n-epochs=50 --noise-source=GW150914 --regularization-parameter=0.0002"
+queue
+
+output = cluster_logs/GW150914_0400_0800.out
+error = cluster_logs/GW150914_0400_0800.err
+log = cluster_logs/GW150914_0400_0800.log
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW150914, 0400_0800' --distances=0400_0800 --initial-lr=0.0001 --initial-threshold=0.0 --n-epochs=50 --noise-source=GW150914 --regularization-parameter=0.0002"
+queue
+
+output = cluster_logs/GW150914_0700_1200.out
+error = cluster_logs/GW150914_0700_1200.err
+log = cluster_logs/GW150914_0700_1200.log
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW150914, 0700_1200' --distances=0700_1200 --initial-lr=0.0001 --initial-threshold=0.0 --n-epochs=50 --noise-source=GW150914 --regularization-parameter=0.0002"
+queue
+
+output = cluster_logs/GW151226_0100_0300.out
+error = cluster_logs/GW151226_0100_0300.err
+log = cluster_logs/GW151226_0100_0300.log
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW151226, 0100_0300' --distances=0100_0300 --initial-lr=0.0001 --initial-threshold=0.0 --n-epochs=50 --noise-source=GW151226 --regularization-parameter=0.0002"
+queue
+
+output = cluster_logs/GW151226_0250_0500.out
+error = cluster_logs/GW151226_0250_0500.err
+log = cluster_logs/GW151226_0250_0500.log
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW151226, 0250_0500' --distances=0250_0500 --initial-lr=0.0001 --initial-threshold=0.0 --n-epochs=50 --noise-source=GW151226 --regularization-parameter=0.0002"
+queue
+
+output = cluster_logs/GW151226_0400_0800.out
+error = cluster_logs/GW151226_0400_0800.err
+log = cluster_logs/GW151226_0400_0800.log
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW151226, 0400_0800' --distances=0400_0800 --initial-lr=0.0001 --initial-threshold=0.0 --n-epochs=50 --noise-source=GW151226 --regularization-parameter=0.0002"
+queue
+
+output = cluster_logs/GW151226_0700_1200.out
+error = cluster_logs/GW151226_0700_1200.err
+log = cluster_logs/GW151226_0700_1200.log
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW151226, 0700_1200' --distances=0700_1200 --initial-lr=0.0001 --initial-threshold=0.0 --n-epochs=50 --noise-source=GW151226 --regularization-parameter=0.0002"
+queue
+
+output = cluster_logs/GW170104_0100_0300.out
+error = cluster_logs/GW170104_0100_0300.err
+log = cluster_logs/GW170104_0100_0300.log
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW170104, 0100_0300' --distances=0100_0300 --initial-lr=0.0001 --initial-threshold=0.0 --n-epochs=50 --noise-source=GW170104 --regularization-parameter=0.0002"
+queue
+
+output = cluster_logs/GW170104_0250_0500.out
+error = cluster_logs/GW170104_0250_0500.err
+log = cluster_logs/GW170104_0250_0500.log
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW170104, 0250_0500' --distances=0250_0500 --initial-lr=0.0001 --initial-threshold=0.0 --n-epochs=50 --noise-source=GW170104 --regularization-parameter=0.0002"
+queue
+
+output = cluster_logs/GW170104_0400_0800.out
+error = cluster_logs/GW170104_0400_0800.err
+log = cluster_logs/GW170104_0400_0800.log
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW170104, 0400_0800' --distances=0400_0800 --initial-lr=0.0001 --initial-threshold=0.0 --n-epochs=50 --noise-source=GW170104 --regularization-parameter=0.0002"
+queue
+
+output = cluster_logs/GW170104_0700_1200.out
+error = cluster_logs/GW170104_0700_1200.err
+log = cluster_logs/GW170104_0700_1200.log
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW170104, 0700_1200' --distances=0700_1200 --initial-lr=0.0001 --initial-threshold=0.0 --n-epochs=50 --noise-source=GW170104 --regularization-parameter=0.0002"
+queue
