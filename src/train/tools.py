@@ -127,7 +127,7 @@ def progress_bar(current_value, max_value, start_time, end='', **kwargs):
     sys.stdout.flush()
 
 
-def load_data_as_tensor_datasets(file_path, split_ratios=(0.7, 0.1, 0.2),
+def load_data_as_tensor_datasets(file_path, split_ratios=(0.8, 0.1, 0.1),
                                  shuffle_data=False, random_seed=42):
     """
     Take an HDF file with data (Gaussian Noise with waveform injections) and
