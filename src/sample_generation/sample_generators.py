@@ -8,7 +8,6 @@ import argparse
 
 from librosa.feature import melspectrogram
 from librosa import logamplitude
-from scipy.interpolate import interp1d
 import warnings
 
 from sample_generation_tools import apply_psd, get_start_end_idx, \
@@ -101,7 +100,7 @@ class SampleGenerator:
 
     def __init__(self, sample_length, sampling_rate, max_n_injections,
                  waveforms, real_strains, psds, noise_type, max_delta_t=0.0,
-                 loudness=1.0, pad=3.0):
+                 loudness=1.0, pad=3.0, event_position=None):
 
         # Store all parameters passed as arguments
         self.sample_length = sample_length
@@ -114,6 +113,7 @@ class SampleGenerator:
         self.noise_type = noise_type
         self.max_delta_t = max_delta_t
         self.loudness = loudness
+        self.event_position = event_position
 
         # Initialize all other class attributes
         self.chirpmasses = None
@@ -176,6 +176,16 @@ class SampleGenerator:
             start = dict()
             start['H1'] = int(np.random.uniform(0, max_pos['H1']))
             start['L1'] = int(np.random.uniform(0, max_pos['L1']))
+
+            # Make sure no real event is contained in the noise we select
+            while ((self.event_position - self.sample_length) <
+                   (start['H1'] / self.sampling_rate) <
+                   (self.event_position + self.sample_length)):
+                start['H1'] = int(np.random.uniform(0, max_pos['H1']))
+            while ((self.event_position - self.sample_length) <
+                   (start['L1'] / self.sampling_rate) <
+                   (self.event_position + self.sample_length)):
+                start['L1'] = int(np.random.uniform(0, max_pos['L1']))
 
             # Find the end positions
             end = dict()
@@ -394,7 +404,7 @@ class Spectrogram(SampleGenerator):
 
     def __init__(self, sample_length, sampling_rate, max_n_injections,
                  waveforms, real_strains, psds, noise_type, max_delta_t=0.0,
-                 loudness=1.0, pad=3.0):
+                 loudness=1.0, pad=3.0, event_position=None):
 
         # Inherit from the SampleGenerator base class
         super().__init__(sample_length=sample_length,
@@ -406,7 +416,8 @@ class Spectrogram(SampleGenerator):
                          noise_type=noise_type,
                          max_delta_t=max_delta_t,
                          loudness=loudness,
-                         pad=pad)
+                         pad=pad,
+                         event_position=event_position)
 
         # Add a variable for the spectrograms
         self.spectrograms = None
@@ -536,7 +547,7 @@ class TimeSeries(SampleGenerator):
 
     def __init__(self, sample_length, sampling_rate, max_n_injections,
                  waveforms, real_strains, psds, noise_type, max_delta_t=0.0,
-                 loudness=1.0, pad=3.0):
+                 loudness=1.0, pad=3.0, event_position=None):
 
         # Inherit from the SampleGenerator base class
         super().__init__(sample_length=sample_length,
@@ -548,7 +559,8 @@ class TimeSeries(SampleGenerator):
                          noise_type=noise_type,
                          max_delta_t=max_delta_t,
                          loudness=loudness,
-                         pad=pad)
+                         pad=pad,
+                         event_position=event_position)
 
         # Remove the padding again
         self.strains, self.signals, self.noises, self.labels, \

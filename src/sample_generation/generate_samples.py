@@ -101,11 +101,16 @@ if __name__ == '__main__':
     results['distances'] = []
     results['snrs'] = []
 
+    # Get the starting position of the event in the noise
+    event_position = {'GW150914': 2048.00,
+                      'GW151226': 122.65,
+                      'GW170104': 2048.60,
+                      'GAUSSIAN': None}[strain_file]
+
     # Start the stopwatch
     start_time = time.time()
     print('Generating {} samples...'.format(use_type))
 
-    # TODO: Can this loop be parallelized?
     for i in range(arguments['n_samples']):
 
         # Create a spectrogram or a time series
@@ -118,7 +123,8 @@ if __name__ == '__main__':
                             waveforms=waveforms,
                             psds=psds,
                             real_strains=real_strains,
-                            max_delta_t=0.01)
+                            max_delta_t=0.01,
+                            event_position=event_position)
 
         # Store away Spectrogram / TimeSeries and labels
         results[sample_type].append(getattr(sample, method_name)())
