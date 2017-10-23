@@ -415,6 +415,9 @@ if __name__ == "__main__":
     test_hamming = hamming_dist(y_pred=test_outputs * test_weights,
                                 y_true=torch.ceil(test_labels * test_weights))
 
+    print('Done!')
+    print('Saving predictions to HDF file...', end=' ')
+
     # Save the predictions of the model on the test set
     with h5py.File(pred_file_path, 'w') as file:
 
@@ -427,4 +430,5 @@ if __name__ == "__main__":
         file['avg_loss'] = test_loss
         file['avg_hamming_distance'] = test_hamming
 
-    print('All Done!')
+    print('Done!')
+    print('TRAINING FINISHED! :)')
