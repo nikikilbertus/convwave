@@ -160,7 +160,8 @@ if __name__ == "__main__":
             bce_loss = bce_loss.cuda()
 
         # Set up the Total Variation term of the loss
-        tv_loss = torch.sum(torch.abs(y_pred[:, :-1] - y_pred[:, 1:]))
+        tv_loss = torch.sum(torch.abs(weights[:, :-1] * y_pred[:, :-1] -
+                                      weights[:, 1:] * y_pred[:, 1:]))
 
         # Return the weighted sum of BCE loss and TV loss
         return bce_loss(y_pred, y_true) + reg * tv_loss
@@ -187,9 +188,9 @@ if __name__ == "__main__":
     # Define a log directory and set up a writer
     run_start = datetime.datetime.now()
     log_name = [run_start, noise_source, distances, sample_size, initial_lr,
-                threshold]
+                threshold, regularization_parameter]
     log_name_formatted = '[{:%Y-%m-%d_%H:%M}]-[{}]-[{}]-[{}]-[LR_{:.1e}]-'\
-                         '[THRESH_{:.2e}]'.format(*log_name)
+                         '[THRESH_{:.2e}]_[REG_{:.2e}]'.format(*log_name)
     writer = SummaryWriter(log_dir='logs/{}'.format(log_name_formatted))
     writer.add_text(tag='Description', text_string=description)
 
@@ -398,13 +399,32 @@ if __name__ == "__main__":
     data_loader_test = DataLoader(data_test, batch_size=batch_size)
 
     # Apply the net to the validation data and get the outputs
-    outputs = apply_model(model, data_loader_test, as_numpy=True)
+    test_outputs = apply_model(model, data_loader_test, as_numpy=False)
+
+    # Get the true labels for the test data and calculate weights
+    test_labels = Variable(data_test.target_tensor, volatile=True)
+    test_weights = get_weights(test_labels, threshold)
+
+    # Calculate the test loss
+    test_loss = loss_function(y_pred=test_outputs,
+                              y_true=torch.ceil(test_labels),
+                              weights=test_weights)
+    test_loss = float(test_loss.data.cpu().numpy())
+
+    # Calculate the test Hamming distance
+    test_hamming = hamming_dist(y_pred=test_outputs * test_weights,
+                                y_true=torch.ceil(test_labels * test_weights))
 
     # Save the predictions of the model on the test set
     with h5py.File(pred_file_path, 'w') as file:
 
+        # Store the data (input, label, network output) for test set
         file['x'] = x_test
-        file['y_pred'] = outputs
+        file['y_pred'] = test_outputs.data.cpu().numpy()
         file['y_true'] = y_test
+
+        # Store the (averaged) loss and Hamming distance on the test set
+        file['avg_loss'] = test_loss
+        file['avg_hamming_distance'] = test_hamming
 
     print('All Done!')
