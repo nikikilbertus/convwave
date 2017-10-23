@@ -3,9 +3,8 @@ executable = /lustre/home/tgebhard/tf-1.0.0_gpu/bin/python3
 getenv = True
 
 request_memory = 16384
-request_cpus = 8
-requirements = CUDAGlobalMemoryMb > 8000
-request_gpus = 4
+request_cpus = 4
+request_gpus = 2
 
 output = cluster_logs/GW150914_0100_0300.out
 error = cluster_logs/GW150914_0100_0300.err
