@@ -33,6 +33,15 @@ from IPython import embed
 if __name__ == "__main__":
 
     # -------------------------------------------------------------------------
+    # CHECK IF CUDA IS AVAILABLE
+    # -------------------------------------------------------------------------
+
+    if torch.cuda.is_available():
+        print('CUDA is available, will use GPUs for training!')
+    else:
+        print('CUDA is not available, will use CPUs for training!')
+
+    # -------------------------------------------------------------------------
     # PARSE COMMAND LINE ARGUMENTS AND DEFINE GLOBAL PARAMETERS
     # -------------------------------------------------------------------------
 
@@ -159,9 +168,13 @@ if __name__ == "__main__":
         if torch.cuda.is_available():
             bce_loss = bce_loss.cuda()
 
-        # Set up the Total Variation term of the loss
-        tv_loss = torch.sum(torch.abs(weights[:, :-1] * y_pred[:, :-1] -
-                                      weights[:, 1:] * y_pred[:, 1:]))
+        # Set up the Total Variation term of the loss. Only calculate it if
+        # we are actually going to use it though!
+        if reg > 0:
+            tv_loss = torch.sum(torch.abs(weights[:, :-1] * y_pred[:, :-1] -
+                                          weights[:, 1:] * y_pred[:, 1:]))
+        else:
+            tv_loss = 0
 
         # Return the weighted sum of BCE loss and TV loss
         return bce_loss(y_pred, y_true) + reg * tv_loss
