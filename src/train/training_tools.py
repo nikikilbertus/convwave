@@ -66,6 +66,9 @@ def hamming_dist(y_true, y_pred):
         (float): The Hamming distance between the two vectors
     """
 
+    # Make sure y_pred is rounded to 0/1
+    y_pred = torch.round(y_pred)
+
     result = torch.mean(torch.abs(y_true - y_pred), dim=1)
     result = torch.mean(result, dim=0)
 
