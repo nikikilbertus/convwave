@@ -280,7 +280,7 @@ def get_weights(labels, threshold):
     """
 
     # TODO: Do we always want to make the start and end of the signals fuzzy?
-    weights = torch.eq(torch.gt(labels, 0) * torch.le(labels, threshold), 0)
+    weights = torch.eq(torch.gt(labels, 0) * torch.lt(labels, threshold), 0)
 
     return weights.float()
 
