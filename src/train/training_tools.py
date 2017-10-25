@@ -317,10 +317,6 @@ class TrainingArgumentParser:
                                  help='Initial learning rate',
                                  type=float,
                                  default=0.0001)
-        self.parser.add_argument('--initial-threshold',
-                                 help='Initial threshold for fuzzy zones',
-                                 type=float,
-                                 default=0.1*10**-21)
         self.parser.add_argument('--n-epochs',
                                  help='Number of epochs to train for',
                                  type=int,
@@ -338,6 +334,10 @@ class TrainingArgumentParser:
                                  help='Sample length in seconds',
                                  type=str,
                                  default='8k')
+        self.parser.add_argument('--use-threshold',
+                                 help='Use fuzzy zones from threshold?',
+                                 type=bool,
+                                 default=False)
         self.parser.add_argument('--weights-file-name',
                                  help='Weight file to load for warm start',
                                  type=str,

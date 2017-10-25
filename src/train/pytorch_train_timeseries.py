@@ -58,11 +58,11 @@ if __name__ == "__main__":
     description = arguments['description']
     distances = arguments['distances']
     initial_lr = arguments['initial_lr']
-    initial_threshold = arguments['initial_threshold']
     n_epochs = arguments['n_epochs']
     noise_source = arguments['noise_source']
     regularization_parameter = arguments['regularization_parameter']
     sample_size = arguments['sample_size']
+    use_threshold = arguments['use_threshold']
     weights_file_name = arguments['weights_file_name']
 
     # -------------------------------------------------------------------------
@@ -183,9 +183,6 @@ if __name__ == "__main__":
     # SET UP REMAINING PARAMETERS
     # -------------------------------------------------------------------------
 
-    # Initialize the threshold used for determining the fuzzy zones
-    threshold = initial_threshold
-
     # Calculate the number of mini-batches
     n_minibatches_train = np.ceil(len(data_train) / batch_size)
     n_minibatches_test = np.ceil(len(data_test) / batch_size)
@@ -195,15 +192,22 @@ if __name__ == "__main__":
     metrics = {'loss': [], 'hamming': [], 'val_loss': [], 'val_hamming': []}
 
     # -------------------------------------------------------------------------
+    # SET UP THE VALUES FOR THE CURRICULUM LEARNING THRESHOLDS
+    # -------------------------------------------------------------------------
+
+    thresholds = iter(np.geomspace(1.4141823e-22, 9.6530531e-22, num=20)[::-1])
+    threshold = None if use_threshold else 0
+
+    # -------------------------------------------------------------------------
     # SET UP A LOGGER FOR TENSORBOARD VISUALIZATION
     # -------------------------------------------------------------------------
 
     # Define a log directory and set up a writer
     run_start = datetime.datetime.now()
     log_name = [run_start, noise_source, distances, sample_size, initial_lr,
-                threshold, regularization_parameter]
+                regularization_parameter]
     log_name_formatted = '[{:%Y-%m-%d_%H:%M}]-[{}]-[{}]-[{}]-[LR_{:.1e}]-'\
-                         '[THRESH_{:.2e}]_[REG_{:.2e}]'.format(*log_name)
+                         '[USETHRESH]_[REG_{:.2e}]'.format(*log_name)
     writer = SummaryWriter(log_dir='logs/{}'.format(log_name_formatted))
     writer.add_text(tag='Description', text_string=description)
 
@@ -225,6 +229,10 @@ if __name__ == "__main__":
 
         # Print the current epoch of the training
         print('Epoch {}/{}'.format(epoch+1, n_epochs))
+
+        # Set up the threshold for this epoch
+        if use_threshold and (epoch % (n_epochs / 20) == 0):
+            threshold = next(thresholds)
 
         # Keep logging the losses and hamming distances of all mini-batches
         epoch_losses = []
@@ -377,10 +385,6 @@ if __name__ == "__main__":
         # Get the minimum validation loss and Hamming distance
         min_val_loss = np.min(metrics['val_loss'])
         min_val_hamming = np.min(metrics['val_hamming'])
-
-        # Reduce the threshold if appropriate
-        if epoch % 3 == 1:
-            threshold = 0.9 * threshold
 
     #
     # -------------------------------------------------------------------------
