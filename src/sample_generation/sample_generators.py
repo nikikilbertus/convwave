@@ -301,11 +301,11 @@ class SampleGenerator:
             signals['H1'][start_pos['H1']:end_pos['H1']] += waveform['H1']
             signals['L1'][start_pos['L1']:end_pos['L1']] += waveform['L1']
 
-            # Create the envelope vector
+            # Create the (normalized) envelope vector
             labels['H1'][start_pos['H1']:end_pos['H1']] += \
-                waveform_envelope['H1']
+                (waveform_envelope['H1'] / np.max(waveform_envelope['H1']))
             labels['L1'][start_pos['L1']:end_pos['L1']] += \
-                waveform_envelope['L1']
+                (waveform_envelope['L1'] / np.max(waveform_envelope['L1']))
 
             # Create the chirpmasses vector
             chirpmasses['H1'][start_pos['H1']:end_pos['H1']] += chirpmass
