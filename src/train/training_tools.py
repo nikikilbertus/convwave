@@ -200,7 +200,7 @@ def load_data_as_tensor_datasets(file_path, split_ratios=(0.8, 0.1, 0.1),
     return tensor_dataset_train, tensor_dataset_test, tensor_dataset_validation
 
 
-def apply_model(model, data_loader, threshold=0.5, as_numpy=False):
+def apply_model(model, data_loader, as_numpy=False):
     """
     Take a model and a data loader, apply the model to the mini-batches from
     that dataloader, and return the results as a single Tensor / array.
@@ -222,7 +222,7 @@ def apply_model(model, data_loader, threshold=0.5, as_numpy=False):
 
         # Get the inputs and wrap them in a PyTorch variable
         inputs, _ = mb_data
-        inputs = Variable(inputs)
+        inputs = Variable(inputs, volatile=True)
 
         # If CUDA is available, run everything on the GPU
         if torch.cuda.is_available():
@@ -292,6 +292,7 @@ def get_labels(raw_labels, threshold):
     labels = torch.gt(raw_labels, threshold)
     return labels.float()
 
+
 # -----------------------------------------------------------------------------
 # CLASS DEFINITIONS
 # -----------------------------------------------------------------------------
@@ -337,11 +338,12 @@ class TrainingArgumentParser:
         self.parser.add_argument('--sample-size',
                                  help='Sample length in seconds',
                                  type=str,
-                                 default='8k')
-        self.parser.add_argument('--use-threshold',
-                                 help='Use fuzzy zones from threshold?',
-                                 type=bool,
-                                 default=False)
+                                 default='4k')
+        self.parser.add_argument('--threshold',
+                                 help='Which threshold to apply for label '
+                                      'creation (i.e., envelope > threshold)',
+                                 type=float,
+                                 default=0.0)
         self.parser.add_argument('--weights-file-name',
                                  help='Weight file to load for warm start',
                                  type=str,
