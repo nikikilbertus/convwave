@@ -16,7 +16,8 @@ src/train/weights/*/*.net
 src/train/weights/*.net
 src/sample_generation/cluster_logs/*
 !src/sample_generation/cluster_logs/README.md
-
+src/evaluation/cluster_logs/*
+!src/evaluation/cluster_logs/README.md
 
 ### LaTeX ###
 ## Core latex/pdflatex auxiliary files:
