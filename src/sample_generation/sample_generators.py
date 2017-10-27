@@ -356,10 +356,10 @@ class SampleGenerator:
 
             self.noises['H1'] = apply_psd(self.noises['H1'], self.psds['H1'])
             self.noises['L1'] = apply_psd(self.noises['L1'], self.psds['L1'])
-            self.signals['H1'] = apply_psd(self.signals['H1'], self.psds[
-             'H1'])
-            self.signals['L1'] = apply_psd(self.signals['L1'], self.psds[
-             'L1'])
+            self.signals['H1'] = apply_psd(self.signals['H1'],
+                                           self.psds['H1'])
+            self.signals['L1'] = apply_psd(self.signals['L1'],
+                                           self.psds['L1'])
 
         return strains
 

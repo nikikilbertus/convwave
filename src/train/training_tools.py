@@ -200,7 +200,7 @@ def load_data_as_tensor_datasets(file_path, split_ratios=(0.8, 0.1, 0.1),
     return tensor_dataset_train, tensor_dataset_test, tensor_dataset_validation
 
 
-def apply_model(model, data_loader, as_numpy=False):
+def apply_model(model, data_loader, threshold=0.5, as_numpy=False):
     """
     Take a model and a data loader, apply the model to the mini-batches from
     that dataloader, and return the results as a single Tensor / array.
@@ -221,13 +221,12 @@ def apply_model(model, data_loader, as_numpy=False):
     for mb_idx, mb_data in enumerate(data_loader):
 
         # Get the inputs and wrap them in a PyTorch variable
-        inputs, labels = mb_data
-        inputs = Variable(inputs, volatile=True)
-        labels = Variable(labels, volatile=True)
+        inputs, _ = mb_data
+        inputs = Variable(inputs)
 
         # If CUDA is available, run everything on the GPU
         if torch.cuda.is_available():
-            inputs, labels = inputs.cuda(), labels.cuda()
+            inputs = inputs.cuda()
 
         # Make predictions for the given mini-batch
         outputs = model.forward(inputs)
@@ -282,11 +281,16 @@ def get_weights(labels, threshold):
         loss and Hamming distance
     """
 
-    # TODO: Do we always want to make the start and end of the signals fuzzy?
-    weights = torch.eq(torch.gt(labels, 0) * torch.lt(labels, threshold), 0)
+    weights = torch.eq(torch.gt(labels, threshold) *
+                       torch.lt(labels, 1.2 * threshold), 0)
 
     return weights.float()
 
+
+def get_labels(raw_labels, threshold):
+
+    labels = torch.gt(raw_labels, threshold)
+    return labels.float()
 
 # -----------------------------------------------------------------------------
 # CLASS DEFINITIONS

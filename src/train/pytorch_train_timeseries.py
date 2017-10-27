@@ -20,7 +20,7 @@ from torch.optim import lr_scheduler
 
 from models import TimeSeriesFCN
 from training_tools import load_data_as_tensor_datasets, progress_bar, \
-    hamming_dist, apply_model, get_current_lr, get_weights, \
+    hamming_dist, apply_model, get_current_lr, get_weights, get_labels, \
     TrainingArgumentParser
 
 from IPython import embed
@@ -192,11 +192,10 @@ if __name__ == "__main__":
     metrics = {'loss': [], 'hamming': [], 'val_loss': [], 'val_hamming': []}
 
     # -------------------------------------------------------------------------
-    # SET UP THE VALUES FOR THE CURRICULUM LEARNING THRESHOLDS
+    # SET UP THE THRESHOLD VALUE FOR THE FWHM CALCULATION
     # -------------------------------------------------------------------------
 
-    thresholds = iter(np.geomspace(1.4141823e-22, 9.6530531e-22, num=20)[::-1])
-    threshold = None if use_threshold else 0
+    threshold = 0.5
 
     # -------------------------------------------------------------------------
     # SET UP A LOGGER FOR TENSORBOARD VISUALIZATION
@@ -230,10 +229,6 @@ if __name__ == "__main__":
         # Print the current epoch of the training
         print('Epoch {}/{}'.format(epoch+1, n_epochs))
 
-        # Set up the threshold for this epoch
-        if use_threshold and (epoch % (n_epochs / 20) == 0):
-            threshold = next(thresholds)
-
         # Keep logging the losses and hamming distances of all mini-batches
         epoch_losses = []
         epoch_hammings = []
@@ -254,31 +249,34 @@ if __name__ == "__main__":
         for mb_idx, mb_data in enumerate(data_loader_train):
 
             # Get the inputs and wrap them in a PyTorch variable
-            inputs, labels = mb_data
-            inputs, labels = Variable(inputs), Variable(labels)
+            inputs, raw_labels = mb_data
+            inputs, raw_labels = Variable(inputs), Variable(raw_labels)
 
             # If CUDA is available, run everything on the GPU
             if torch.cuda.is_available():
-                inputs, labels = inputs.cuda(), labels.cuda()
+                inputs, raw_labels = inputs.cuda(), raw_labels.cuda()
+
+            # Calculate the real labels from the raw labels
+            labels = get_labels(raw_labels, threshold)
 
             # Run a forward pass through the net and reshape outputs properly
             outputs = model.forward(inputs)
             outputs = outputs.view((outputs.size()[0], outputs.size()[-1]))
 
             # Calculate weights (i.e., fuzzy zones) from labels
-            weights = get_weights(labels, threshold)
+            weights = get_weights(raw_labels, threshold)
 
             # Calculate the loss using the weighted labels and predictions
             # and keep track of it for logging purposes
             loss = loss_function(y_pred=outputs,
-                                 y_true=torch.ceil(labels),
+                                 y_true=labels,
                                  weights=weights)
             mb_loss = float(loss.data.cpu().numpy())
             epoch_losses.append(mb_loss)
 
             # Calculate the Hamming distance for this mini-batch
             mb_hamming = hamming_dist(y_pred=(outputs * weights),
-                                      y_true=torch.ceil(labels * weights))
+                                      y_true=(labels * weights))
             epoch_hammings.append(mb_hamming)
 
             # Zero the gradients, then back-propagate the loss and update the
@@ -306,18 +304,19 @@ if __name__ == "__main__":
         outputs = apply_model(model, data_loader_validation)
 
         # Get the true labels for the validation data and calculate weights
-        labels = Variable(data_validation.target_tensor, volatile=True)
-        weights = get_weights(labels, threshold)
+        raw_labels = Variable(data_validation.target_tensor, volatile=True)
+        labels = get_labels(raw_labels, threshold)
+        weights = get_weights(raw_labels, threshold)
 
         # Calculate the validation loss
         val_loss = loss_function(y_pred=outputs,
-                                 y_true=torch.ceil(labels),
+                                 y_true=labels,
                                  weights=weights)
         val_loss = float(val_loss.data.cpu().numpy())
 
         # Calculate the validation Hamming distance
-        val_hamming = hamming_dist(y_pred=outputs*weights,
-                                   y_true=torch.ceil(labels*weights))
+        val_hamming = hamming_dist(y_pred=(outputs * weights),
+                                   y_true=(labels * weights))
 
         # ---------------------------------------------------------------------
         # STORE ALL METRICS FOR THIS EPOCH
@@ -419,18 +418,19 @@ if __name__ == "__main__":
     test_outputs = apply_model(model, data_loader_test, as_numpy=False)
 
     # Get the true labels for the test data and calculate weights
-    test_labels = Variable(data_test.target_tensor, volatile=True)
-    test_weights = get_weights(test_labels, threshold)
+    test_raw_labels = Variable(data_test.target_tensor, volatile=True)
+    test_labels = get_labels(test_raw_labels, threshold)
+    test_weights = get_weights(test_raw_labels, threshold)
 
     # Calculate the test loss
     test_loss = loss_function(y_pred=test_outputs,
-                              y_true=torch.ceil(test_labels),
+                              y_true=test_labels,
                               weights=test_weights)
     test_loss = float(test_loss.data.cpu().numpy())
 
     # Calculate the test Hamming distance
-    test_hamming = hamming_dist(y_pred=test_outputs * test_weights,
-                                y_true=torch.ceil(test_labels * test_weights))
+    test_hamming = hamming_dist(y_pred=(test_outputs * test_weights),
+                                y_true=(test_labels * test_weights))
 
     print('Done!')
     print('Saving predictions to HDF file...', end=' ')
