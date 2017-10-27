@@ -62,7 +62,7 @@ if __name__ == "__main__":
     noise_source = arguments['noise_source']
     regularization_parameter = arguments['regularization_parameter']
     sample_size = arguments['sample_size']
-    use_threshold = arguments['use_threshold']
+    threshold = arguments['threshold']
     weights_file_name = arguments['weights_file_name']
 
     # -------------------------------------------------------------------------
@@ -75,8 +75,9 @@ if __name__ == "__main__":
     data_path = '../data/'
 
     # Build the path for the file where our training samples come from
-    sample_file_name = 'training_{}_{}_{}.h5'.format(noise_source, distances,
-                                                     sample_size)
+    sample_file_name = 'training_{}_{}_{}_FWHM.h5'.format(noise_source,
+                                                          distances,
+                                                          sample_size)
     sample_file_path = os.path.join(data_path, 'training', 'timeseries',
                                     sample_file_name)
 
@@ -87,10 +88,10 @@ if __name__ == "__main__":
         weight_file_path = None
 
     # Build path for the HDF file in which we will store the test predictions
-    pred_file_name = 'predictions_{}_{}_{}.h5'.format(noise_source, distances,
-                                                      sample_size)
+    pred_file_name = 'training_predictions_{}_{}_{}_FWHM.h5'.\
+        format(noise_source, distances, sample_size)
     pred_file_path = os.path.join(data_path, 'predictions', 'timeseries',
-                                  pred_file_name)
+                                  'training', pred_file_name)
 
     print('Done!')
 
@@ -141,7 +142,7 @@ if __name__ == "__main__":
     # -------------------------------------------------------------------------
 
     scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
-                                               factor=0.794, patience=3,
+                                               factor=0.707, patience=3,
                                                threshold=0.01)
 
     # -------------------------------------------------------------------------
@@ -192,21 +193,15 @@ if __name__ == "__main__":
     metrics = {'loss': [], 'hamming': [], 'val_loss': [], 'val_hamming': []}
 
     # -------------------------------------------------------------------------
-    # SET UP THE THRESHOLD VALUE FOR THE FWHM CALCULATION
-    # -------------------------------------------------------------------------
-
-    threshold = 0.5
-
-    # -------------------------------------------------------------------------
     # SET UP A LOGGER FOR TENSORBOARD VISUALIZATION
     # -------------------------------------------------------------------------
 
     # Define a log directory and set up a writer
     run_start = datetime.datetime.now()
     log_name = [run_start, noise_source, distances, sample_size, initial_lr,
-                regularization_parameter]
+                threshold, regularization_parameter]
     log_name_formatted = '[{:%Y-%m-%d_%H:%M}]-[{}]-[{}]-[{}]-[LR_{:.1e}]-'\
-                         '[USETHRESH]_[REG_{:.2e}]'.format(*log_name)
+                         '[THR_{:.1f}]_[REG_{:.2e}]'.format(*log_name)
     writer = SummaryWriter(log_dir='logs/{}'.format(log_name_formatted))
     writer.add_text(tag='Description', text_string=description)
 
@@ -355,7 +350,7 @@ if __name__ == "__main__":
         log_metric('val_loss', val_loss, epoch)
         log_metric('val_hamming_dist', val_hamming, epoch)
         log_metric('learning_rate', lr, epoch)
-        log_metric('threshold', threshold * 10**21, epoch)
+        log_metric('threshold', threshold, epoch)
 
         # ---------------------------------------------------------------------
         # SAVE SNAPSHOTS OF THE MODEL'S WEIGHTS (EVERY OTHER EPOCH)
@@ -396,8 +391,8 @@ if __name__ == "__main__":
     # -------------------------------------------------------------------------
 
     print('Saving model...', end=' ')
-    weights_file = ('./weights/timeseries_weights_{}_{}_{}.net'.
-                    format(noise_source, distances, sample_size))
+    weights_file = ('./weights/timeseries_weights_{}_{}_{}_{:.1f}_FWHM.net'.
+                    format(noise_source, distances, sample_size, threshold))
     torch.save(model.state_dict(), weights_file)
     print('Done!')
 
