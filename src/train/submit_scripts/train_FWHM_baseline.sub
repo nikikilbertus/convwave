@@ -10,74 +10,110 @@ request_gpus = 4
 requirements = ((Target.Machine =!= "g008.internal.cluster.is.localnet") && (Target.Machine =!= "g009.internal.cluster.is.localnet") && (Target.Machine =!= "g010.internal.cluster.is.localnet"))
 
 
-output = cluster_logs/GW150914_0100_0300.out.$(Process)
-error = cluster_logs/GW150914_0100_0300.err.$(Process)
-log = cluster_logs/GW150914_0100_0300.log.$(Process)
-arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW150914, 0100_0300' --distances=0100_0300 --initial-lr=0.0001 --use-threshold=False --n-epochs=50 --noise-source=GW150914 --regularization-parameter=0.0"
+output = cluster_logs/GW150914_0100_0300_FWHM_baseline.out.$(Process)
+error = cluster_logs/GW150914_0100_0300_FWHM_baseline.err.$(Process)
+log = cluster_logs/GW150914_0100_0300_FWHM_baseline.log.$(Process)
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='FWHM Baseline for: GW150914, 0100_0300' --distances=0100_0300 --initial-lr=0.0001 --n-epochs=50 --noise-source=GW150914 --regularization-parameter=0.0 --sample-size=4k --threshold=0.0"
 queue
 
-output = cluster_logs/GW150914_0250_0500.out.$(Process)
-error = cluster_logs/GW150914_0250_0500.err.$(Process)
-log = cluster_logs/GW150914_0250_0500.log.$(Process)
-arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW150914, 0250_0500' --distances=0250_0500 --initial-lr=0.0001 --use-threshold=False --n-epochs=50 --noise-source=GW150914 --regularization-parameter=0.0"
+output = cluster_logs/GW150914_0250_0500_FWHM_baseline.out.$(Process)
+error = cluster_logs/GW150914_0250_0500_FWHM_baseline.err.$(Process)
+log = cluster_logs/GW150914_0250_0500_FWHM_baseline.log.$(Process)
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='FWHM Baseline for: GW150914, 0250_0500' --distances=0250_0500 --initial-lr=0.0001 --n-epochs=50 --noise-source=GW150914 --regularization-parameter=0.0 --sample-size=4k --threshold=0.0"
 queue
 
-output = cluster_logs/GW150914_0400_0800.out.$(Process)
-error = cluster_logs/GW150914_0400_0800.err.$(Process)
-log = cluster_logs/GW150914_0400_0800.log.$(Process)
-arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW150914, 0400_0800' --distances=0400_0800 --initial-lr=0.0001 --use-threshold=False --n-epochs=50 --noise-source=GW150914 --regularization-parameter=0.0"
+output = cluster_logs/GW150914_0400_0800_FWHM_baseline.out.$(Process)
+error = cluster_logs/GW150914_0400_0800_FWHM_baseline.err.$(Process)
+log = cluster_logs/GW150914_0400_0800_FWHM_baseline.log.$(Process)
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='FWHM Baseline for: GW150914, 0400_0800' --distances=0400_0800 --initial-lr=0.0001 --n-epochs=50 --noise-source=GW150914 --regularization-parameter=0.0 --sample-size=4k --threshold=0.0"
 queue
 
-output = cluster_logs/GW150914_0700_1200.out.$(Process)
-error = cluster_logs/GW150914_0700_1200.err.$(Process)
-log = cluster_logs/GW150914_0700_1200.log.$(Process)
-arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW150914, 0700_1200' --distances=0700_1200 --initial-lr=0.0001 --use-threshold=False --n-epochs=50 --noise-source=GW150914 --regularization-parameter=0.0"
+output = cluster_logs/GW150914_0700_1200_FWHM_baseline.out.$(Process)
+error = cluster_logs/GW150914_0700_1200_FWHM_baseline.err.$(Process)
+log = cluster_logs/GW150914_0700_1200_FWHM_baseline.log.$(Process)
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='FWHM Baseline for: GW150914, 0700_1200' --distances=0700_1200 --initial-lr=0.0001 --n-epochs=50 --noise-source=GW150914 --regularization-parameter=0.0 --sample-size=4k --threshold=0.0"
 queue
 
-output = cluster_logs/GW151226_0100_0300.out.$(Process)
-error = cluster_logs/GW151226_0100_0300.err.$(Process)
-log = cluster_logs/GW151226_0100_0300.log.$(Process)
-arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW151226, 0100_0300' --distances=0100_0300 --initial-lr=0.0001 --use-threshold=False --n-epochs=50 --noise-source=GW151226 --regularization-parameter=0.0"
+output = cluster_logs/GW150914_1000_1700_FWHM_baseline.out.$(Process)
+error = cluster_logs/GW150914_1000_1700_FWHM_baseline.err.$(Process)
+log = cluster_logs/GW150914_1000_1700_FWHM_baseline.log.$(Process)
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='FWHM Baseline for: GW150914, 1000_1700' --distances=1000_1700 --initial-lr=0.0001 --n-epochs=50 --noise-source=GW150914 --regularization-parameter=0.0 --sample-size=4k --threshold=0.0"
 queue
 
-output = cluster_logs/GW151226_0250_0500.out.$(Process)
-error = cluster_logs/GW151226_0250_0500.err.$(Process)
-log = cluster_logs/GW151226_0250_0500.log.$(Process)
-arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW151226, 0250_0500' --distances=0250_0500 --initial-lr=0.0001 --use-threshold=False --n-epochs=50 --noise-source=GW151226 --regularization-parameter=0.0"
+output = cluster_logs/GW150914_1500_2500_FWHM_baseline.out.$(Process)
+error = cluster_logs/GW150914_1500_2500_FWHM_baseline.err.$(Process)
+log = cluster_logs/GW150914_1500_2500_FWHM_baseline.log.$(Process)
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='FWHM Baseline for: GW150914, 1500_2500' --distances=1500_2500 --initial-lr=0.0001 --n-epochs=50 --noise-source=GW150914 --regularization-parameter=0.0 --sample-size=4k --threshold=0.0"
 queue
 
-output = cluster_logs/GW151226_0400_0800.out.$(Process)
-error = cluster_logs/GW151226_0400_0800.err.$(Process)
-log = cluster_logs/GW151226_0400_0800.log.$(Process)
-arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW151226, 0400_0800' --distances=0400_0800 --initial-lr=0.0001 --use-threshold=False --n-epochs=50 --noise-source=GW151226 --regularization-parameter=0.0"
+output = cluster_logs/GW151226_0100_0300_FWHM_baseline.out.$(Process)
+error = cluster_logs/GW151226_0100_0300_FWHM_baseline.err.$(Process)
+log = cluster_logs/GW151226_0100_0300_FWHM_baseline.log.$(Process)
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='FWHM Baseline for: GW151226, 0100_0300' --distances=0100_0300 --initial-lr=0.0001 --n-epochs=50 --noise-source=GW151226 --regularization-parameter=0.0 --sample-size=4k --threshold=0.0"
 queue
 
-output = cluster_logs/GW151226_0700_1200.out.$(Process)
-error = cluster_logs/GW151226_0700_1200.err.$(Process)
-log = cluster_logs/GW151226_0700_1200.log.$(Process)
-arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW151226, 0700_1200' --distances=0700_1200 --initial-lr=0.0001 --use-threshold=False --n-epochs=50 --noise-source=GW151226 --regularization-parameter=0.0"
+output = cluster_logs/GW151226_0250_0500_FWHM_baseline.out.$(Process)
+error = cluster_logs/GW151226_0250_0500_FWHM_baseline.err.$(Process)
+log = cluster_logs/GW151226_0250_0500_FWHM_baseline.log.$(Process)
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='FWHM Baseline for: GW151226, 0250_0500' --distances=0250_0500 --initial-lr=0.0001 --n-epochs=50 --noise-source=GW151226 --regularization-parameter=0.0 --sample-size=4k --threshold=0.0"
 queue
 
-output = cluster_logs/GW170104_0100_0300.out.$(Process)
-error = cluster_logs/GW170104_0100_0300.err.$(Process)
-log = cluster_logs/GW170104_0100_0300.log.$(Process)
-arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW170104, 0100_0300' --distances=0100_0300 --initial-lr=0.0001 --use-threshold=False --n-epochs=50 --noise-source=GW170104 --regularization-parameter=0.0"
+output = cluster_logs/GW151226_0400_0800_FWHM_baseline.out.$(Process)
+error = cluster_logs/GW151226_0400_0800_FWHM_baseline.err.$(Process)
+log = cluster_logs/GW151226_0400_0800_FWHM_baseline.log.$(Process)
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='FWHM Baseline for: GW151226, 0400_0800' --distances=0400_0800 --initial-lr=0.0001 --n-epochs=50 --noise-source=GW151226 --regularization-parameter=0.0 --sample-size=4k --threshold=0.0"
 queue
 
-output = cluster_logs/GW170104_0250_0500.out.$(Process)
-error = cluster_logs/GW170104_0250_0500.err.$(Process)
-log = cluster_logs/GW170104_0250_0500.log.$(Process)
-arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW170104, 0250_0500' --distances=0250_0500 --initial-lr=0.0001 --use-threshold=False --n-epochs=50 --noise-source=GW170104 --regularization-parameter=0.0"
+output = cluster_logs/GW151226_0700_1200_FWHM_baseline.out.$(Process)
+error = cluster_logs/GW151226_0700_1200_FWHM_baseline.err.$(Process)
+log = cluster_logs/GW151226_0700_1200_FWHM_baseline.log.$(Process)
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='FWHM Baseline for: GW151226, 0700_1200' --distances=0700_1200 --initial-lr=0.0001 --n-epochs=50 --noise-source=GW151226 --regularization-parameter=0.0 --sample-size=4k --threshold=0.0"
 queue
 
-output = cluster_logs/GW170104_0400_0800.out.$(Process)
-error = cluster_logs/GW170104_0400_0800.err.$(Process)
-log = cluster_logs/GW170104_0400_0800.log.$(Process)
-arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW170104, 0400_0800' --distances=0400_0800 --initial-lr=0.0001 --use-threshold=False --n-epochs=50 --noise-source=GW170104 --regularization-parameter=0.0"
+output = cluster_logs/GW151226_1000_1700_FWHM_baseline.out.$(Process)
+error = cluster_logs/GW151226_1000_1700_FWHM_baseline.err.$(Process)
+log = cluster_logs/GW151226_1000_1700_FWHM_baseline.log.$(Process)
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='FWHM Baseline for: GW151226, 1000_1700' --distances=1000_1700 --initial-lr=0.0001 --n-epochs=50 --noise-source=GW151226 --regularization-parameter=0.0 --sample-size=4k --threshold=0.0"
 queue
 
-output = cluster_logs/GW170104_0700_1200.out.$(Process)
-error = cluster_logs/GW170104_0700_1200.err.$(Process)
-log = cluster_logs/GW170104_0700_1200.log.$(Process)
-arguments="pytorch_train_timeseries.py --batch-size=16 --description='Baseline for: GW170104, 0700_1200' --distances=0700_1200 --initial-lr=0.0001 --use-threshold=False --n-epochs=50 --noise-source=GW170104 --regularization-parameter=0.0"
+output = cluster_logs/GW151226_1500_2500_FWHM_baseline.out.$(Process)
+error = cluster_logs/GW151226_1500_2500_FWHM_baseline.err.$(Process)
+log = cluster_logs/GW151226_1500_2500_FWHM_baseline.log.$(Process)
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='FWHM Baseline for: GW151226, 1500_2500' --distances=1500_2500 --initial-lr=0.0001 --n-epochs=50 --noise-source=GW151226 --regularization-parameter=0.0 --sample-size=4k --threshold=0.0"
+queue
+
+output = cluster_logs/GW170104_0100_0300_FWHM_baseline.out.$(Process)
+error = cluster_logs/GW170104_0100_0300_FWHM_baseline.err.$(Process)
+log = cluster_logs/GW170104_0100_0300_FWHM_baseline.log.$(Process)
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='FWHM Baseline for: GW170104, 0100_0300' --distances=0100_0300 --initial-lr=0.0001 --n-epochs=50 --noise-source=GW170104 --regularization-parameter=0.0 --sample-size=4k --threshold=0.0"
+queue
+
+output = cluster_logs/GW170104_0250_0500_FWHM_baseline.out.$(Process)
+error = cluster_logs/GW170104_0250_0500_FWHM_baseline.err.$(Process)
+log = cluster_logs/GW170104_0250_0500_FWHM_baseline.log.$(Process)
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='FWHM Baseline for: GW170104, 0250_0500' --distances=0250_0500 --initial-lr=0.0001 --n-epochs=50 --noise-source=GW170104 --regularization-parameter=0.0 --sample-size=4k --threshold=0.0"
+queue
+
+output = cluster_logs/GW170104_0400_0800_FWHM_baseline.out.$(Process)
+error = cluster_logs/GW170104_0400_0800_FWHM_baseline.err.$(Process)
+log = cluster_logs/GW170104_0400_0800_FWHM_baseline.log.$(Process)
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='FWHM Baseline for: GW170104, 0400_0800' --distances=0400_0800 --initial-lr=0.0001 --n-epochs=50 --noise-source=GW170104 --regularization-parameter=0.0 --sample-size=4k --threshold=0.0"
+queue
+
+output = cluster_logs/GW170104_0700_1200_FWHM_baseline.out.$(Process)
+error = cluster_logs/GW170104_0700_1200_FWHM_baseline.err.$(Process)
+log = cluster_logs/GW170104_0700_1200_FWHM_baseline.log.$(Process)
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='FWHM Baseline for: GW170104, 0700_1200' --distances=0700_1200 --initial-lr=0.0001 --n-epochs=50 --noise-source=GW170104 --regularization-parameter=0.0 --sample-size=4k --threshold=0.0"
+queue
+
+output = cluster_logs/GW170104_1000_1700_FWHM_baseline.out.$(Process)
+error = cluster_logs/GW170104_1000_1700_FWHM_baseline.err.$(Process)
+log = cluster_logs/GW170104_1000_1700_FWHM_baseline.log.$(Process)
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='FWHM Baseline for: GW170104, 1000_1700' --distances=1000_1700 --initial-lr=0.0001 --n-epochs=50 --noise-source=GW170104 --regularization-parameter=0.0 --sample-size=4k --threshold=0.0"
+queue
+
+output = cluster_logs/GW170104_1500_2500_FWHM_baseline.out.$(Process)
+error = cluster_logs/GW170104_1500_2500_FWHM_baseline.err.$(Process)
+log = cluster_logs/GW170104_1500_2500_FWHM_baseline.log.$(Process)
+arguments="pytorch_train_timeseries.py --batch-size=16 --description='FWHM Baseline for: GW170104, 1500_2500' --distances=1500_2500 --initial-lr=0.0001 --n-epochs=50 --noise-source=GW170104 --regularization-parameter=0.0 --sample-size=4k --threshold=0.0"
 queue
