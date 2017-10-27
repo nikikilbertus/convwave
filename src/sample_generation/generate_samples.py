@@ -102,7 +102,7 @@ if __name__ == '__main__':
     results['snrs'] = []
 
     # Get the starting position of the event in the noise
-    event_position = {'GW150914': 2048.00,
+    event_position = {'GW150914': 2048.40,
                       'GW151226': 122.65,
                       'GW170104': 2048.60,
                       'GAUSSIAN': None}[strain_file]
