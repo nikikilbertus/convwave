@@ -111,48 +111,99 @@ class TimeSeriesFCN(nn.Module):
         # Convolutional layers: (in_channels, out_channels, kernel_size)
         self.conv00 = nn.Conv1d(in_channels=2, out_channels=size,
                                 kernel_size=1, dilation=1, padding=0)
+        self.convolutions = []
+
         self.conv01 = nn.Conv1d(in_channels=size, out_channels=size,
                                 kernel_size=3, dilation=1, padding=1)
+        self.convolutions.append(self.conv01)
+
         self.conv02 = nn.Conv1d(in_channels=size, out_channels=size,
                                 kernel_size=2, dilation=2, padding=1)
+        self.convolutions.append(self.conv02)
+
         self.conv03 = nn.Conv1d(in_channels=size, out_channels=size,
                                 kernel_size=2, dilation=4, padding=2)
+        self.convolutions.append(self.conv03)
+
         self.conv04 = nn.Conv1d(in_channels=size, out_channels=size,
                                 kernel_size=2, dilation=8, padding=4)
+        self.convolutions.append(self.conv04)
+
         self.conv05 = nn.Conv1d(in_channels=size, out_channels=size,
                                 kernel_size=2, dilation=16, padding=8)
+        self.convolutions.append(self.conv05)
+
         self.conv06 = nn.Conv1d(in_channels=size, out_channels=size,
                                 kernel_size=2, dilation=32, padding=16)
+        self.convolutions.append(self.conv06)
+
         self.conv07 = nn.Conv1d(in_channels=size, out_channels=size,
                                 kernel_size=2, dilation=64, padding=32)
+        self.convolutions.append(self.conv07)
+
         self.conv08 = nn.Conv1d(in_channels=size, out_channels=size,
                                 kernel_size=2, dilation=128, padding=64)
+        self.convolutions.append(self.conv08)
+
         self.conv09 = nn.Conv1d(in_channels=size, out_channels=size,
                                 kernel_size=2, dilation=256, padding=128)
+        self.convolutions.append(self.conv09)
+
         self.conv10 = nn.Conv1d(in_channels=size, out_channels=size,
                                 kernel_size=2, dilation=512, padding=256)
+        self.convolutions.append(self.conv10)
+
         self.conv11 = nn.Conv1d(in_channels=size, out_channels=size,
                                 kernel_size=2, dilation=1024, padding=512)
+        self.convolutions.append(self.conv11)
+
         self.conv12 = nn.Conv1d(in_channels=size, out_channels=size,
                                 kernel_size=2, dilation=2048, padding=1024)
-        self.conv13 = nn.Conv1d(in_channels=size, out_channels=1,
-                                kernel_size=1, dilation=1, padding=0)
+        self.convolutions.append(self.conv12)
         # This should give a receptive field of size 4096?
 
+        self.conv13 = nn.Conv1d(in_channels=size, out_channels=1,
+                                kernel_size=1, dilation=1, padding=0)
+
         # Batch norm layers
+        self.batchnorms = []
         self.batchnorm00 = nn.BatchNorm1d(num_features=size)
+
         self.batchnorm01 = nn.BatchNorm1d(num_features=size)
+        self.batchnorms.append(self.batchnorm01)
+
         self.batchnorm02 = nn.BatchNorm1d(num_features=size)
+        self.batchnorms.append(self.batchnorm02)
+
         self.batchnorm03 = nn.BatchNorm1d(num_features=size)
+        self.batchnorms.append(self.batchnorm03)
+
         self.batchnorm04 = nn.BatchNorm1d(num_features=size)
+        self.batchnorms.append(self.batchnorm04)
+
         self.batchnorm05 = nn.BatchNorm1d(num_features=size)
+        self.batchnorms.append(self.batchnorm05)
+
         self.batchnorm06 = nn.BatchNorm1d(num_features=size)
+        self.batchnorms.append(self.batchnorm06)
+
         self.batchnorm07 = nn.BatchNorm1d(num_features=size)
+        self.batchnorms.append(self.batchnorm07)
+
         self.batchnorm08 = nn.BatchNorm1d(num_features=size)
+        self.batchnorms.append(self.batchnorm08)
+
         self.batchnorm09 = nn.BatchNorm1d(num_features=size)
+        self.batchnorms.append(self.batchnorm09)
+
         self.batchnorm10 = nn.BatchNorm1d(num_features=size)
+        self.batchnorms.append(self.batchnorm10)
+
         self.batchnorm11 = nn.BatchNorm1d(num_features=size)
+        self.batchnorms.append(self.batchnorm11)
+
         self.batchnorm12 = nn.BatchNorm1d(num_features=size)
+        self.batchnorms.append(self.batchnorm12)
 
     # -------------------------------------------------------------------------
     # Define a forward pass through the network (apply the layers)
@@ -169,17 +220,8 @@ class TimeSeriesFCN(nn.Module):
         # Layers 1 to 12
         # ---------------------------------------------------------------------
 
-        # Collect all layers
-        convolutions = [self.conv01, self.conv02, self.conv03, self.conv04,
-                        self.conv05, self.conv06, self.conv07, self.conv08,
-                        self.conv09, self.conv10, self.conv11, self.conv12]
-        batchnorms = [self.batchnorm01, self.batchnorm02, self.batchnorm03,
-                      self.batchnorm04, self.batchnorm05, self.batchnorm06,
-                      self.batchnorm07, self.batchnorm08, self.batchnorm09,
-                      self.batchnorm10, self.batchnorm11, self.batchnorm12]
-
         # Apply all layers (either forward or backward)
-        for conv, batchnorm in list(zip(convolutions, batchnorms))[::1]:
+        for conv, batchnorm in list(zip(self.convolutions, self.batchnorms)):
 
             x = conv(x)
             x = batchnorm(x)
