@@ -16,6 +16,8 @@ from torch.autograd import Variable
 sys.path.insert(0, '../train/')
 from models import TimeSeriesFCN
 
+from IPython import embed
+
 
 # -----------------------------------------------------------------------------
 # FUNCTION DEFINITIONS
@@ -52,8 +54,6 @@ def apply_model(model, data_loader, as_numpy=False):
     # Loop over the test set (in mini-batches) to get the predictions
     for mb_idx, mb_data in enumerate(data_loader):
 
-        print(mb_idx)
-
         # Get the inputs and wrap them in a PyTorch variable
         inputs, labels = mb_data
         inputs = Variable(inputs, volatile=True)
@@ -68,11 +68,11 @@ def apply_model(model, data_loader, as_numpy=False):
         outputs = outputs.view((outputs.size()[0], outputs.size()[-1]))
 
         # Stack that onto the previous predictions
-        y_pred.append(outputs)
+        y_pred.append(outputs.cpu())
 
     # Concatenate the list of Variables to one Variable (this is faster than
     # concatenating all intermediate results) and make sure results are float
-    y_pred = torch.cat(y_pred, dim=0).float()
+    y_pred = torch.cat(y_pred, dim=0).float().cuda()
 
     # If necessary, convert model outputs to numpy array
     if as_numpy:
@@ -86,16 +86,22 @@ def apply_model(model, data_loader, as_numpy=False):
 
 def get_weights(labels, threshold):
     weights = torch.eq(torch.gt(labels, 0) * torch.lt(labels, threshold), 0)
+
+    # If CUDA is available, run everything on the GPU
+    if torch.cuda.is_available():
+        weights = weights.cuda()
+
     return weights.float()
 
 
 # -----------------------------------------------------------------------------
 
 
-def loss_function(y_pred, y_true, weights):
+def loss_func(y_pred, y_true, weights):
 
     # Set up the Binary Cross-Entropy term of the loss
     bce_loss = nn.BCELoss(weight=weights)
+
     if torch.cuda.is_available():
         bce_loss = bce_loss.cuda()
 
@@ -105,7 +111,7 @@ def loss_function(y_pred, y_true, weights):
 # -----------------------------------------------------------------------------
 
 
-def accuracy(y_true, y_pred):
+def accuracy_func(y_true, y_pred):
 
     # Make sure y_pred is rounded to 0/1
     y_pred = torch.round(y_pred)
@@ -132,7 +138,7 @@ if __name__ == '__main__':
     # Define the weights we want to use (in this case form TCL)
     weights_file = os.path.join('..', 'train', 'weights',
                                 'timeseries_weights_{}_{}_{}.net'.
-                                format('GW170104', '0100_1200', '16k'))
+                                format('GW170104', '0100_1200', '32k'))
 
     # Check if CUDA is available. If not, loading the weights is a bit more
     # cumbersome and we have to use some tricks
@@ -160,29 +166,30 @@ if __name__ == '__main__':
 
         # Load data into data tensor and data loader
         file_path = os.path.join('..', 'data', 'predictions', 'timeseries',
-                                 'baseline', 'predctions_{}_{}_{}.h5'.
+                                 'baseline', 'predictions_{}_{}_{}.h5'.
                                  format('GW170104', dist, '8k'))
         datatensor = load_data_as_tensor_datasets(file_path)
-        dataloader = DataLoader(datatensor, batch_size=32)
+        dataloader = DataLoader(datatensor, batch_size=16)
 
         # Get the true labels we need for the comparison
-        true_labels = Variable(datatensor.target_tensor, volatile=True)
+        true_labels = Variable(datatensor.target_tensor, volatile=True).cuda()
 
         # Get the predictions by applying the pre-trained net
         predictions = apply_model(model, dataloader)
 
         # Get weights that we need to calculate our metrics
         weights = get_weights(true_labels, 1.4141823e-22)
+        # weights = Variable(torch.ones(weights.size()), volatile=True).cuda()
 
         # Calculate the loss (averaged over the entire dataset)
-        loss = loss_function(y_pred=predictions,
-                             y_true=torch.ceil(true_labels),
-                             weights=weights)
+        loss = loss_func(y_pred=predictions,
+                         y_true=torch.ceil(true_labels),
+                         weights=weights)
         loss = float(loss.data.cpu().numpy())
 
         # Calculate the accuracy (averaged over the entire dataset)
-        accuracy = accuracy(y_pred=predictions * weights,
-                            y_true=torch.ceil(true_labels * weights))
+        accuracy = accuracy_func(y_pred=predictions * weights,
+                                 y_true=torch.ceil(true_labels * weights))
 
         # Print the results
         print('Loss: {:.3f}'.format(loss))
