@@ -8,6 +8,8 @@ import sys
 import h5py
 import torch
 import torch.nn as nn
+import itertools
+import operator
 
 from collections import OrderedDict
 from torch.utils.data import TensorDataset, DataLoader
@@ -22,6 +24,19 @@ from IPython import embed
 # -----------------------------------------------------------------------------
 # FUNCTION DEFINITIONS
 # -----------------------------------------------------------------------------
+
+def find_ones(a):
+    """Taken from https://stackoverflow.com/a/31544723/4100721"""
+
+    # Create an array that is 1 where a is 1, and pad each end with an extra 0
+    isvalue = np.concatenate(([0], np.equal(a, 1).view(np.int8), [0]))
+    absdiff = np.abs(np.diff(isvalue))
+
+    # Runs start and end where absdiff is 1.
+    ranges = np.where(absdiff == 1)[0].reshape(-1, 2)
+
+    return ranges
+
 
 def load_data_as_tensor_datasets(file_path, random_seed=42):
 
@@ -129,12 +144,36 @@ def accuracy_func(y_true, y_pred):
 
 
 # -----------------------------------------------------------------------------
+
+
+def metrics_func(y_true, y_pred):
+
+    # Make sure y_pred is rounded to 0/1
+    y_pred = torch.round(y_pred)
+
+    # Get all four cases of the confusion matrix
+    TP = torch.sum(torch.eq(y_pred, 1).float() * torch.eq(y_true, 1).float())
+    TN = torch.sum(torch.eq(y_pred, 0).float() * torch.eq(y_true, 0).float())
+    FP = torch.sum(torch.eq(y_pred, 1).float() * torch.eq(y_true, 0).float())
+    FN = torch.sum(torch.eq(y_pred, 0).float() * torch.eq(y_true, 1).float())
+
+    # Calculate various metrics derived from the confusion matrix
+    accuracy = float(((TP + TN) / (TP + TN + FP + FN)).data.cpu().numpy())
+    f1_score = float((2 * TP / (2 * TP + FP + FN)).data.cpu().numpy())
+    sensitivity = float((TP / (TP + FN)).data.cpu().numpy())
+    specificity = float((TN / (TN + FP)).data.cpu().numpy())
+    precision = float((TP / (TP + FP)).data.cpu().numpy())
+
+    return accuracy, f1_score, sensitivity, specificity, precision
+
+
+# -----------------------------------------------------------------------------
 # MAIN PROGRAM
 # -----------------------------------------------------------------------------
 
 if __name__ == '__main__':
 
-    threshold = 0.0
+    threshold = 0.5
     sample_size = '4k'
 
     # -------------------------------------------------------------------------
@@ -153,7 +192,7 @@ if __name__ == '__main__':
             model = TimeSeriesFCN()
 
             # Define the weights file we want to use for evaluation
-            _ = ['..', 'train', 'weights', 'fwhm_baseline',
+            _ = ['..', 'train', 'weights', 'fwhm_findcoa',
                  'timeseries_weights_{}_{}_{}_{:.1f}_FWHM.net'.
                  format(event, dist, sample_size, threshold)]
             weights_file = os.path.join(*_)
@@ -177,15 +216,15 @@ if __name__ == '__main__':
             # ACTUALLY PERFORM THE EVALUATION
             # -----------------------------------------------------------------
 
-            print('NOW EVALUATING FWHM BASELINE FOR: {}, {}'.format(event,
-                                                                    dist))
+            print('EVALUATING FWHM (FINDCOA) FOR: {}, {}'.
+                  format(event, dist))
 
             # Load data into data tensor and data loader
             file_path = os.path.join('..', 'data', 'testing', 'timeseries',
                                      'testing_{}_{}_{}_FWHM.h5'.
                                      format(event, dist, sample_size))
             datatensor = load_data_as_tensor_datasets(file_path)
-            dataloader = DataLoader(datatensor, batch_size=16)
+            dataloader = DataLoader(datatensor, batch_size=32)
 
             # Get the true labels we need for the comparison
             raw_labels = Variable(datatensor.target_tensor, volatile=True)
@@ -204,10 +243,54 @@ if __name__ == '__main__':
             accuracy = accuracy_func(y_pred=predictions,
                                      y_true=labels)
 
-            # Print the results
-            print('Loss: ... {:.3f}'.format(loss))
-            print('Accuracy: {:.1f}%'.format(100 * accuracy))
+            # Convert predictions and labels to numpy to compute other metrics
+            predictions = predictions.data.cpu().numpy()
+            labels = labels.data.cpu().numpy()
+
+            # Smooth the predictions to get a rid of all short spikes
+            window_size = 20
+            for i in range(len(predictions)):
+                predictions[i] = np.convolve(predictions[i],
+                                             np.ones(window_size)/window_size,
+                                             mode='same')
+                predictions[i] = np.round(predictions[i])
+
+            # Keep track of the injections we find, and the triggers we predict
+            found = 0
+            not_found = 0
+            triggers = 0
+            false_alarms = 0
+            min_trigger_length = 1
+
+            # Loop over all predictions
+            for i in range(len(predictions)):
+
+                inj_positions = find_ones(labels[i])
+                for s, e in inj_positions:
+                    if np.mean(predictions[i][s:e]) < 0.1:
+                        not_found += 1
+                    else:
+                        found += 1
+
+                trigger_positions = find_ones(predictions[i])
+                for s, e in trigger_positions:
+                    if e-s > min_trigger_length:
+                        triggers += 1
+                    if np.mean(labels[i][s:e]) < 0.1:
+                        false_alarms += 1
+
+            # Print the results / metrics
+            print('Loss: ............... {:.3f}'.format(loss))
+            print('Accuracy: ........... {:.1f}%'.format(100 * accuracy))
+            print('Injections found: ... {}'.format(found))
+            print('Injections not found: {}'.format(not_found))
+            print('Recovery Ratio: ..... {:.1f}%'.
+                  format(100 * found/(found+not_found)))
+            print('Trigger Count: ...... {}'.format(triggers))
+            print('False Alarm Count: .. {}'.format(false_alarms))
+            print('False Alarm Rate: ... {:.1f}%'.
+                  format(100 * false_alarms / triggers))
             print()
 
-        print(53 * '-')
+        print(65 * '-')
         print()
