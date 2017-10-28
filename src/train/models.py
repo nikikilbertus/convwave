@@ -111,7 +111,7 @@ class TimeSeriesFCN(nn.Module):
         # Convolutional layers: (in_channels, out_channels, kernel_size)
         self.conv00 = nn.Conv1d(in_channels=2, out_channels=size,
                                 kernel_size=1, dilation=1, padding=0)
-        self.convolutions = []
+        self.convolutions = nn.ModuleList()
 
         self.conv01 = nn.Conv1d(in_channels=size, out_channels=size,
                                 kernel_size=3, dilation=1, padding=1)
@@ -166,7 +166,7 @@ class TimeSeriesFCN(nn.Module):
                                 kernel_size=1, dilation=1, padding=0)
 
         # Batch norm layers
-        self.batchnorms = []
+        self.batchnorms = nn.ModuleList()
         self.batchnorm00 = nn.BatchNorm1d(num_features=size)
 
         self.batchnorm01 = nn.BatchNorm1d(num_features=size)
