@@ -180,8 +180,8 @@ if __name__ == '__main__':
             print('NOW EVALUATING FWHM BASELINE FOR:', dist)
 
             # Load data into data tensor and data loader
-            file_path = os.path.join('..', 'data', 'predictions', 'timeseries',
-                                     'testing', 'testing_{}_{}_{}_FWHM.h5'.
+            file_path = os.path.join('..', 'data', 'testing', 'timeseries',
+                                     'testing_{}_{}_{}_FWHM.h5'.
                                      format(event, dist, sample_size))
             datatensor = load_data_as_tensor_datasets(file_path)
             dataloader = DataLoader(datatensor, batch_size=16)
