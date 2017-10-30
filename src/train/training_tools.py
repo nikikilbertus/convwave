@@ -221,13 +221,12 @@ def apply_model(model, data_loader, as_numpy=False):
     for mb_idx, mb_data in enumerate(data_loader):
 
         # Get the inputs and wrap them in a PyTorch variable
-        inputs, labels = mb_data
+        inputs, _ = mb_data
         inputs = Variable(inputs, volatile=True)
-        labels = Variable(labels, volatile=True)
 
         # If CUDA is available, run everything on the GPU
         if torch.cuda.is_available():
-            inputs, labels = inputs.cuda(), labels.cuda()
+            inputs = inputs.cuda()
 
         # Make predictions for the given mini-batch
         outputs = model.forward(inputs)
@@ -282,10 +281,16 @@ def get_weights(labels, threshold):
         loss and Hamming distance
     """
 
-    # TODO: Do we always want to make the start and end of the signals fuzzy?
-    weights = torch.eq(torch.gt(labels, 0) * torch.lt(labels, threshold), 0)
+    weights = torch.eq(torch.gt(labels, threshold) *
+                       torch.lt(labels, 1.2 * threshold), 0)
 
     return weights.float()
+
+
+def get_labels(raw_labels, threshold):
+
+    labels = torch.gt(raw_labels, threshold)
+    return labels.float()
 
 
 # -----------------------------------------------------------------------------
@@ -333,11 +338,12 @@ class TrainingArgumentParser:
         self.parser.add_argument('--sample-size',
                                  help='Sample length in seconds',
                                  type=str,
-                                 default='8k')
-        self.parser.add_argument('--use-threshold',
-                                 help='Use fuzzy zones from threshold?',
-                                 type=bool,
-                                 default=False)
+                                 default='4k')
+        self.parser.add_argument('--threshold',
+                                 help='Which threshold to apply for label '
+                                      'creation (i.e., envelope > threshold)',
+                                 type=float,
+                                 default=0.0)
         self.parser.add_argument('--weights-file-name',
                                  help='Weight file to load for warm start',
                                  type=str,

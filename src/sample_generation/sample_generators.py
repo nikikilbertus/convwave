@@ -99,8 +99,9 @@ class CustomArgumentParser:
 class SampleGenerator:
 
     def __init__(self, sample_length, sampling_rate, max_n_injections,
-                 waveforms, real_strains, psds, noise_type, max_delta_t=0.0,
-                 loudness=1.0, pad=3.0, event_position=None):
+                 waveforms, real_strains, white_strain_std, psds,
+                 noise_type, max_delta_t=0.01, loudness=1.0, pad=3.0,
+                 event_position=None):
 
         # Store all parameters passed as arguments
         self.sample_length = sample_length
@@ -108,6 +109,7 @@ class SampleGenerator:
         self.max_n_injections = max_n_injections
         self.waveforms = waveforms
         self.real_strains = real_strains
+        self.white_strain_std = white_strain_std
         self.pad = pad
         self.psds = psds
         self.noise_type = noise_type
@@ -301,11 +303,11 @@ class SampleGenerator:
             signals['H1'][start_pos['H1']:end_pos['H1']] += waveform['H1']
             signals['L1'][start_pos['L1']:end_pos['L1']] += waveform['L1']
 
-            # Create the envelope vector
+            # Create the (normalized) envelope vector
             labels['H1'][start_pos['H1']:end_pos['H1']] += \
-                waveform_envelope['H1']
+                (waveform_envelope['H1'] / np.max(waveform_envelope['H1']))
             labels['L1'][start_pos['L1']:end_pos['L1']] += \
-                waveform_envelope['L1']
+                (waveform_envelope['L1'] / np.max(waveform_envelope['L1']))
 
             # Create the chirpmasses vector
             chirpmasses['H1'][start_pos['H1']:end_pos['H1']] += chirpmass
@@ -319,21 +321,19 @@ class SampleGenerator:
             # Calculate the SNRs for this injection
             # -----------------------------------------------------------------
 
-            # Get the power of the noise
-            noise_power = dict()
-            noise_power['H1'] = np.var(self.noises['H1'][start_pos['H1']:
-                                                         end_pos['H1']])
-            noise_power['L1'] = np.var(self.noises['L1'][start_pos['L1']:
-                                                         end_pos['L1']])
+            # Whiten the waveforms
+            white_waveform = dict()
+            white_waveform['H1'] = apply_psd(waveform['H1'], self.psds['H1'])
+            white_waveform['L1'] = apply_psd(waveform['L1'], self.psds['L1'])
 
-            # Get the power of the signal
-            signal_power = dict()
-            signal_power['H1'] = np.var(waveform['H1'])
-            signal_power['L1'] = np.var(waveform['L1'])
+            # Get the amplitude maximum of the whitened signal
+            max_signal = dict()
+            max_signal['H1'] = np.max(np.abs(white_waveform['H1']))
+            max_signal['L1'] = np.max(np.abs(white_waveform['L1']))
 
-            # Calculate the signal-to-noise-ratios
-            snr = {'H1': signal_power['H1'] / noise_power['H1'],
-                   'L1': signal_power['L1'] / noise_power['L1']}
+            # Calculate the peak signal-to-noise ratio
+            snr = {'H1': max_signal['H1'] / self.white_strain_std['H1'],
+                   'L1': max_signal['L1'] / self.white_strain_std['L1']}
             snrs.append(snr)
 
         return signals, labels, chirpmasses, distances, snrs
@@ -356,10 +356,10 @@ class SampleGenerator:
 
             self.noises['H1'] = apply_psd(self.noises['H1'], self.psds['H1'])
             self.noises['L1'] = apply_psd(self.noises['L1'], self.psds['L1'])
-            self.signals['H1'] = apply_psd(self.signals['H1'], self.psds[
-             'H1'])
-            self.signals['L1'] = apply_psd(self.signals['L1'], self.psds[
-             'L1'])
+            self.signals['H1'] = apply_psd(self.signals['H1'],
+                                           self.psds['H1'])
+            self.signals['L1'] = apply_psd(self.signals['L1'],
+                                           self.psds['L1'])
 
         return strains
 
@@ -403,8 +403,8 @@ class SampleGenerator:
 class Spectrogram(SampleGenerator):
 
     def __init__(self, sample_length, sampling_rate, max_n_injections,
-                 waveforms, real_strains, psds, noise_type, max_delta_t=0.0,
-                 loudness=1.0, pad=3.0, event_position=None):
+                 waveforms, real_strains, white_strain_std, psds, noise_type,
+                 max_delta_t=0.01, loudness=1.0, pad=3.0, event_position=None):
 
         # Inherit from the SampleGenerator base class
         super().__init__(sample_length=sample_length,
@@ -412,6 +412,7 @@ class Spectrogram(SampleGenerator):
                          max_n_injections=max_n_injections,
                          waveforms=waveforms,
                          real_strains=real_strains,
+                         white_strain_std=white_strain_std,
                          psds=psds,
                          noise_type=noise_type,
                          max_delta_t=max_delta_t,
@@ -546,8 +547,8 @@ class Spectrogram(SampleGenerator):
 class TimeSeries(SampleGenerator):
 
     def __init__(self, sample_length, sampling_rate, max_n_injections,
-                 waveforms, real_strains, psds, noise_type, max_delta_t=0.0,
-                 loudness=1.0, pad=3.0, event_position=None):
+                 waveforms, real_strains, white_strain_std, psds, noise_type,
+                 max_delta_t=0.01, loudness=1.0, pad=3.0, event_position=None):
 
         # Inherit from the SampleGenerator base class
         super().__init__(sample_length=sample_length,
@@ -555,6 +556,7 @@ class TimeSeries(SampleGenerator):
                          max_n_injections=max_n_injections,
                          waveforms=waveforms,
                          real_strains=real_strains,
+                         white_strain_std=white_strain_std,
                          psds=psds,
                          noise_type=noise_type,
                          max_delta_t=max_delta_t,

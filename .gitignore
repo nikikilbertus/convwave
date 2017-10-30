@@ -12,7 +12,7 @@
 src/train/logs/*/
 src/train/cluster_logs/*
 !src/train/cluster_logs/README.md
-src/train/weights/*/*.net
+src/train/weights/*
 src/train/weights/*.net
 src/sample_generation/cluster_logs/*
 !src/sample_generation/cluster_logs/README.md

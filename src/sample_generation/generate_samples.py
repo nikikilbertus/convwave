@@ -11,7 +11,7 @@ import h5py
 
 from sample_generators import CustomArgumentParser, Spectrogram, TimeSeries
 from sample_generation_tools import get_psd, get_waveforms_as_dataframe, \
-    progress_bar, snr_from_results_list
+    progress_bar, snr_from_results_list, apply_psd
 
 
 # -----------------------------------------------------------------------------
@@ -74,6 +74,25 @@ if __name__ == '__main__':
     print('Done!')
 
     # -------------------------------------------------------------------------
+    # Calculate the Standard Deviations of the Whitened Strain
+    # -------------------------------------------------------------------------
+
+    print('Computing STDs of whitened strains...', end=' ')
+
+    # Whiten the strain by applying the PSD
+    white_strains = dict()
+    white_strains['H1'] = apply_psd(real_strains['H1'], psds['H1'])
+    white_strains['L1'] = apply_psd(real_strains['L1'], psds['L1'])
+
+    # Calculate the standard deviation. Skip the first and last seconds to
+    # avoid spectral leakage due to applying the PSD
+    white_strain_std = dict()
+    white_strain_std['H1'] = np.std(white_strains['H1'][4096:-4096])
+    white_strain_std['L1'] = np.std(white_strains['L1'][4096:-4096])
+
+    print('Done!')
+
+    # -------------------------------------------------------------------------
     # Load the pre-calculated waveforms from an HDF file into a DataFrame
     # -------------------------------------------------------------------------
 
@@ -102,7 +121,7 @@ if __name__ == '__main__':
     results['snrs'] = []
 
     # Get the starting position of the event in the noise
-    event_position = {'GW150914': 2048.00,
+    event_position = {'GW150914': 2048.40,
                       'GW151226': 122.65,
                       'GW170104': 2048.60,
                       'GAUSSIAN': None}[strain_file]
@@ -123,6 +142,7 @@ if __name__ == '__main__':
                             waveforms=waveforms,
                             psds=psds,
                             real_strains=real_strains,
+                            white_strain_std=white_strain_std,
                             max_delta_t=0.01,
                             event_position=event_position)
 
