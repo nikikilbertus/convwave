@@ -1,15 +1,3 @@
-# gw-continuous
-Detect gravitational waves in spectrograms using a Deep Fully Convolutional Net (DFCN), which basically allows arbitrary input sizes.
+# ConvWave
 
-
-
-### To Do List:
-
-* Parameter Estimation: Chirp Mass, Distance
-* Do the same thing with Glitches? → Requires figuring out the Omicron stuff?
-* Don't only present coincident injections, maybe it helps to sometimes just inject a waveform in one detector, still demanding for zero output.
-* What do we gain in terms of evaluation by making these actual triggers and defining a score?
-* Write up
-* ???
-* Profit 💸💸💸
-
+The first detection of gravitational waves (GWs) from a binary black hole merger in 2015 was a milestone in modern physics, and just recently awarded with the Nobel Prize. However, despite the unparalleled sensitivity of the LIGO detectors, there still exist challenges in the analysis of the recorded data. We apply ConvWave, a dilated, fully convolutional neural net directly on the time series strain data to localize simulated GW signals from black hole mergers in real, non-Gaussian background measurements from the LIGO detectors. ConvWave performs well on simulated signals with masses and distances chosen from ranges that contain the estimated parameters of all previously detected real events. It efficiently runs on strain data of arbitrary length from any number of detectors in real time. Through our proposed evaluation approach, it has the potential to develop into a complementary trigger generator in the existing LIGO search pipeline.
