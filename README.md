@@ -1,5 +1,7 @@
 # ConvWave: Searching for Gravitational Waves with Fully Convolutional Neural Nets
 
+## Please go to [https://github.com/timothygebhard/magic-bullet](https://github.com/timothygebhard/magic-bullet) for an up to date version of this project 
+
 **TL;DR:** 
 
 We propose a method based on fully convolutional neurals nets to detect and localize simulated GW signals in arbitrarily long stretches of real detector noise, using multiple channels in parallel.
